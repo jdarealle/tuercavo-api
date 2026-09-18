@@ -1,0 +1,12 @@
+[package]
+name = "entity"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+authors.workspace = true
+readme.workspace = true
+
+[dependencies]
+sea-orm = { workspace = true }
+serde = { workspace = true }
