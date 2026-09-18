@@ -12,7 +12,7 @@ impl MigrationTrait for Migration {
             .col(ColumnDef::new(Users::RoleId).small_integer().not_null())
             .col(ColumnDef::new(Users::EntraTenantId).uuid().not_null())
             .col(ColumnDef::new(Users::EntraObjectId).uuid().not_null())
-            .col(ColumnDef::new(Users::Email).custom("citext").not_null())
+            .col(ColumnDef::new(Users::Email).string_len(254).not_null())
             .col(ColumnDef::new(Users::FullName).string_len(150).not_null())
             .col(ColumnDef::new(Users::IsActive).boolean().not_null().default(true))
             .col(ColumnDef::new(Users::CreatedAt).timestamp_with_time_zone().not_null().default(Expr::current_timestamp()))
@@ -21,7 +21,7 @@ impl MigrationTrait for Migration {
             .index(Index::create().name("uq_users_public_id").unique().col(Users::PublicId))
             .index(Index::create().name("uq_users_entra_identity").unique().col(Users::EntraTenantId).col(Users::EntraObjectId))
             .foreign_key(ForeignKey::create().name("fk_users_role").from(Users::Table, Users::RoleId).to(Roles::Table, Roles::Id).on_delete(ForeignKeyAction::Restrict))
-            .check(("ck_users_email", Expr::cust(r#"char_length(email) BETWEEN 1 AND 254 AND email::text = btrim(email::text) AND email::text !~ '[[:space:][:cntrl:]]'"#)))
+            .check(("ck_users_email", Expr::cust(r#"char_length(email) BETWEEN 1 AND 254 AND email = btrim(email) AND email !~ '[[:space:][:cntrl:]]'"#)))
             .check(("ck_users_full_name", Expr::cust(r#"char_length(full_name) BETWEEN 1 AND 150 AND full_name = btrim(full_name) AND full_name !~ '[[:cntrl:]]'"#)))
             .to_owned()).await?;
         Ok(())

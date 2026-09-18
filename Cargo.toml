@@ -11,5 +11,7 @@ authors = ["JD"]
 readme = "README.md"
 
 [workspace.dependencies]
+sea-orm = { version = "2.0.3", features = ["sqlx-postgres", "runtime-tokio-rustls", "macros", "debug-print"] }
 sea-orm-migration = { version = "=2.0.2", features = ["sqlx-postgres", "runtime-tokio-rustls"] }
 tokio = { version = "=1.53.1", features = ["macros", "rt-multi-thread"] }
+serde = { version = "1", features = ["derive"] }

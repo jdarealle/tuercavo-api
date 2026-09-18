@@ -11,16 +11,9 @@ pub struct Model {
     pub id: i32,
     #[sea_orm(unique)]
     pub public_id: Uuid,
-    #[sea_orm(ignore, column_type = "custom(\"citext\")", select_as = "text", unique)]
     pub code: String,
     pub name: String,
     pub contact_name: Option<String>,
-    #[sea_orm(
-        ignore,
-        column_type = "custom(\"citext\")",
-        select_as = "text",
-        nullable
-    )]
     pub email: Option<String>,
     pub phone: Option<String>,
     pub status: CatalogStatus,

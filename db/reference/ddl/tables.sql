@@ -1,14 +1,14 @@
 -- Tuercavo: documentación del esquema; NO es la vía operativa de instalación.
 -- Aplicar db/migration con SeaORM. Este archivo describe una base ya provisionada.
 -- PostgreSQL 18, UTF8, locale de la base C.UTF-8 (provider libc).
--- CITEXT usa LC_CTYPE: igualdad sin distinguir mayúsculas, no elimina acentos.
+-- Unicidad de SKU/código/nombre de categoría mediante índices sobre lower(...).
+-- lower usa el locale de la base; no elimina acentos. Consultar con lower(col) = lower(valor).
 -- Fechas TIMESTAMPTZ; conexiones en UTC. La API mantiene updated_at, sin triggers.
 -- Textos con trim, sin controles; opcionales vacíos se rechazan, ausencia = NULL.
 -- Descripciones: hasta 4000 caracteres, una línea. Nombres: hasta 150.
 -- SKU/código: 1..64 caracteres ASCII alfanuméricos, punto, guion y guion bajo.
 -- Emails: hasta 254 caracteres; su sintaxis se valida en la API, no con regex SQL.
 
-CREATE EXTENSION citext;
 CREATE TYPE catalog_status AS ENUM ('active', 'inactive', 'archived');
 
 -- Roles locales fijos; no se enlazan automáticamente con roles externos de Entra.
@@ -50,7 +50,7 @@ CREATE TABLE users (
     role_id SMALLINT NOT NULL,
     entra_tenant_id UUID NOT NULL,
     entra_object_id UUID NOT NULL,
-    email CITEXT NOT NULL,
+    email VARCHAR(254) NOT NULL,
     full_name VARCHAR(150) NOT NULL,
     is_active BOOLEAN NOT NULL DEFAULT true,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -59,7 +59,7 @@ CREATE TABLE users (
     CONSTRAINT uq_users_public_id UNIQUE (public_id),
     CONSTRAINT uq_users_entra_identity UNIQUE (entra_tenant_id, entra_object_id),
     CONSTRAINT fk_users_role FOREIGN KEY (role_id) REFERENCES roles(id) ON DELETE RESTRICT,
-    CONSTRAINT ck_users_email CHECK (char_length(email) BETWEEN 1 AND 254 AND email::text = btrim(email::text) AND email::text !~ '[[:space:][:cntrl:]]'),
+    CONSTRAINT ck_users_email CHECK (char_length(email) BETWEEN 1 AND 254 AND email = btrim(email) AND email !~ '[[:space:][:cntrl:]]'),
     CONSTRAINT ck_users_full_name CHECK (char_length(full_name) BETWEEN 1 AND 150 AND full_name = btrim(full_name) AND full_name !~ '[[:cntrl:]]')
 );
 
@@ -67,39 +67,39 @@ CREATE TABLE users (
 CREATE TABLE categories (
     id INTEGER GENERATED ALWAYS AS IDENTITY,
     public_id UUID NOT NULL DEFAULT gen_random_uuid(),
-    name CITEXT NOT NULL,
+    name VARCHAR(150) NOT NULL,
     description TEXT,
     status catalog_status NOT NULL DEFAULT 'active',
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT pk_categories PRIMARY KEY (id),
     CONSTRAINT uq_categories_public_id UNIQUE (public_id),
-    CONSTRAINT uq_categories_name UNIQUE (name),
-    CONSTRAINT ck_categories_name CHECK (char_length(name) BETWEEN 1 AND 150 AND name::text = btrim(name::text) AND name::text !~ '[[:cntrl:]]'),
+    CONSTRAINT ck_categories_name CHECK (char_length(name) BETWEEN 1 AND 150 AND name = btrim(name) AND name !~ '[[:cntrl:]]'),
     CONSTRAINT ck_categories_description CHECK (char_length(description) BETWEEN 1 AND 4000 AND description = btrim(description) AND description !~ '[[:cntrl:]]')
 );
+CREATE UNIQUE INDEX uq_categories_name ON categories (lower(name));
 
 -- Proveedor principal opcional de un producto; contactos opcionales anulables.
 CREATE TABLE suppliers (
     id INTEGER GENERATED ALWAYS AS IDENTITY,
     public_id UUID NOT NULL DEFAULT gen_random_uuid(),
-    code CITEXT NOT NULL,
+    code VARCHAR(64) NOT NULL,
     name VARCHAR(150) NOT NULL,
     contact_name VARCHAR(150),
-    email CITEXT,
+    email VARCHAR(254),
     phone VARCHAR(32),
     status catalog_status NOT NULL DEFAULT 'active',
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT pk_suppliers PRIMARY KEY (id),
     CONSTRAINT uq_suppliers_public_id UNIQUE (public_id),
-    CONSTRAINT uq_suppliers_code UNIQUE (code),
-    CONSTRAINT ck_suppliers_code CHECK (char_length(code) BETWEEN 1 AND 64 AND code::text ~ '^[A-Za-z0-9][A-Za-z0-9._-]*$'),
+    CONSTRAINT ck_suppliers_code CHECK (char_length(code) BETWEEN 1 AND 64 AND code ~ '^[A-Za-z0-9][A-Za-z0-9._-]*$'),
     CONSTRAINT ck_suppliers_name CHECK (char_length(name) BETWEEN 1 AND 150 AND name = btrim(name) AND name !~ '[[:cntrl:]]'),
     CONSTRAINT ck_suppliers_contact_name CHECK (char_length(contact_name) BETWEEN 1 AND 150 AND contact_name = btrim(contact_name) AND contact_name !~ '[[:cntrl:]]'),
-    CONSTRAINT ck_suppliers_email CHECK (char_length(email) BETWEEN 1 AND 254 AND email::text = btrim(email::text) AND email::text !~ '[[:space:][:cntrl:]]'),
+    CONSTRAINT ck_suppliers_email CHECK (char_length(email) BETWEEN 1 AND 254 AND email = btrim(email) AND email !~ '[[:space:][:cntrl:]]'),
     CONSTRAINT ck_suppliers_phone CHECK (char_length(phone) BETWEEN 1 AND 32 AND phone = btrim(phone) AND phone !~ '[[:cntrl:]]')
 );
+CREATE UNIQUE INDEX uq_suppliers_code ON suppliers (lower(code));
 
 -- Precio de catálogo por unidad, MXN, sin impuestos ni conversiones.
 -- La API debe rechazar >2 decimales ANTES de persistir (NUMERIC redondea).
@@ -109,7 +109,7 @@ CREATE TABLE suppliers (
 CREATE TABLE products (
     id BIGINT GENERATED ALWAYS AS IDENTITY,
     public_id UUID NOT NULL DEFAULT gen_random_uuid(),
-    sku CITEXT NOT NULL,
+    sku VARCHAR(64) NOT NULL,
     name VARCHAR(150) NOT NULL,
     description TEXT,
     brand VARCHAR(100),
@@ -122,16 +122,16 @@ CREATE TABLE products (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT pk_products PRIMARY KEY (id),
     CONSTRAINT uq_products_public_id UNIQUE (public_id),
-    CONSTRAINT uq_products_sku UNIQUE (sku),
     CONSTRAINT fk_products_category FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE RESTRICT,
     CONSTRAINT fk_products_supplier FOREIGN KEY (supplier_id) REFERENCES suppliers(id) ON DELETE RESTRICT,
-    CONSTRAINT ck_products_sku CHECK (char_length(sku) BETWEEN 1 AND 64 AND sku::text ~ '^[A-Za-z0-9][A-Za-z0-9._-]*$'),
+    CONSTRAINT ck_products_sku CHECK (char_length(sku) BETWEEN 1 AND 64 AND sku ~ '^[A-Za-z0-9][A-Za-z0-9._-]*$'),
     CONSTRAINT ck_products_name CHECK (char_length(name) BETWEEN 1 AND 150 AND name = btrim(name) AND name !~ '[[:cntrl:]]'),
     CONSTRAINT ck_products_description CHECK (char_length(description) BETWEEN 1 AND 4000 AND description = btrim(description) AND description !~ '[[:cntrl:]]'),
     CONSTRAINT ck_products_brand CHECK (char_length(brand) BETWEEN 1 AND 100 AND brand = btrim(brand) AND brand !~ '[[:cntrl:]]'),
     CONSTRAINT ck_products_unit CHECK (unit IN ('piece', 'box', 'pack', 'meter', 'liter', 'kg')),
     CONSTRAINT ck_products_price CHECK (price >= 0 AND price <> 'NaN'::numeric)
 );
+CREATE UNIQUE INDEX uq_products_sku ON products (lower(sku));
 
 -- PK y UNIQUE ya generan índices. Estos cubren FKs sin repetirlos.
 CREATE INDEX idx_role_permissions_permission_id ON role_permissions (permission_id);

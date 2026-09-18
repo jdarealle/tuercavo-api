@@ -15,7 +15,6 @@ pub struct Model {
     pub entra_tenant_id: Uuid,
     #[sea_orm(unique_key = "uq_users_entra_identity")]
     pub entra_object_id: Uuid,
-    #[sea_orm(ignore, column_type = "custom(\"citext\")", select_as = "text")]
     pub email: String,
     pub full_name: String,
     pub is_active: bool,

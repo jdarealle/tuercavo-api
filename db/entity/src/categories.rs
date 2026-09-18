@@ -11,7 +11,6 @@ pub struct Model {
     pub id: i32,
     #[sea_orm(unique)]
     pub public_id: Uuid,
-    #[sea_orm(ignore, column_type = "custom(\"citext\")", select_as = "text", unique)]
     pub name: String,
     #[sea_orm(column_type = "Text", nullable)]
     pub description: Option<String>,
