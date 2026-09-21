@@ -27,6 +27,7 @@ Crea `.env` a partir de [`.env.sample`](.env.sample) si todavía no existe y sus
 | `ENTRA_CLIENT_ID` | UUID de la aplicación registrada en Entra. |
 | `ENTRA_CLIENT_SECRET` | Valor del secreto de la aplicación. |
 | `OIDC_REDIRECT_URI` | Callback obligatorio; en local: `http://localhost:3000/api/auth/callback`. |
+| `POST_LOGIN_REDIRECT_PATH` | Ruta de regreso tras un login exitoso; predeterminado `/api/auth/me`. Cuando exista la SPA, configura una ruta suya, por ejemplo `/app`. |
 | `SESSION_TTL_SECS` | Duración absoluta de la sesión: `28800` segundos (8 horas). |
 | `SESSION_IDLE_TTL_SECS` | Tiempo máximo sin actividad: `1800` segundos (30 minutos). |
 
@@ -79,7 +80,7 @@ cargo run -p api --features scalar
 ```
 
 1. Abre [Iniciar sesión](http://localhost:3000/api/auth/login) y autentícate con el usuario registrado.
-2. El callback crea la sesión y redirige a `/api/auth/me`.
+2. El callback crea la sesión y redirige a `POST_LOGIN_REDIRECT_PATH` (`/api/auth/me` por defecto).
 3. Abre [Scalar](http://localhost:3000/scalar) en el mismo navegador y host.
 
 Scalar utiliza la cookie de sesión que envía el navegador. No hay que copiar tokens. Usa siempre `localhost` en este ejemplo: alternarlo con `127.0.0.1` cambia el host de la cookie y el origen de las peticiones.

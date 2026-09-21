@@ -67,7 +67,7 @@ async fn login(State(state): State<AuthState>, jar: CookieJar) -> Result<Respons
 }
 
 #[utoipa::path(get, path = "/auth/callback", tag = "auth", operation_id = "oidc_callback", params(Callback), responses(
-    (status = 303, description = "Sesión local creada; redirige a /api/auth/me"),
+    (status = 303, description = "Sesión local creada; redirige a la ruta local configurada"),
     (status = 400, body = AuthErrorResponse), (status = 403, body = AuthErrorResponse),
     (status = 502, body = AuthErrorResponse), (status = 503, body = AuthErrorResponse)))]
 async fn callback(
@@ -84,7 +84,7 @@ async fn callback(
                 (header::REFERRER_POLICY, "no-referrer"),
             ],
             jar.add(state.0.cookies.session(token.value().to_owned())),
-            Redirect::to("/api/auth/me"),
+            Redirect::to(&state.0.post_login_redirect_path),
         )
             .into_response(),
         Err(error) => (jar, error).into_response(),

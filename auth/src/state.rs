@@ -25,6 +25,7 @@ pub(crate) struct Inner {
     pub sessions: SessionStore,
     pub cookies: CookiePolicy,
     pub public_origin: String,
+    pub post_login_redirect_path: String,
     tenant_id: uuid::Uuid,
     flows: Mutex<HashMap<[u8; 32], LoginFlow>>,
 }
@@ -52,6 +53,7 @@ pub async fn build_state(config: AuthConfig, db: DatabaseConnection) -> Result<A
         sessions,
         cookies,
         public_origin: config.public_origin(),
+        post_login_redirect_path: config.post_login_redirect_path,
         tenant_id: config.tenant_id,
         flows: Mutex::new(HashMap::new()),
     })))

@@ -3,6 +3,7 @@ use url::{Host, Url};
 use uuid::Uuid;
 
 pub const CALLBACK_PATH: &str = "/api/auth/callback";
+const DEFAULT_POST_LOGIN_REDIRECT_PATH: &str = "/api/auth/me";
 pub const LOGIN_FLOW_TTL_SECS: i64 = 300;
 const MAX_SESSION_TTL_SECS: i64 = 604_800;
 
@@ -12,6 +13,7 @@ pub struct AuthConfig {
     pub client_id: Uuid,
     pub client_secret: String,
     pub redirect_uri: Url,
+    pub post_login_redirect_path: String,
     pub session_ttl_secs: i64,
     pub session_idle_ttl_secs: i64,
 }
@@ -28,6 +30,11 @@ impl AuthConfig {
             client_secret: required("ENTRA_CLIENT_SECRET")?,
             redirect_uri: Url::parse(&required("OIDC_REDIRECT_URI")?)
                 .map_err(|_| "OIDC_REDIRECT_URI debe ser una URL absoluta válida")?,
+            post_login_redirect_path: match env::var("POST_LOGIN_REDIRECT_PATH") {
+                Ok(path) => path,
+                Err(env::VarError::NotPresent) => DEFAULT_POST_LOGIN_REDIRECT_PATH.into(),
+                Err(_) => return Err("POST_LOGIN_REDIRECT_PATH inválida".into()),
+            },
             session_ttl_secs: ttl("SESSION_TTL_SECS", 28_800)?,
             session_idle_ttl_secs: ttl("SESSION_IDLE_TTL_SECS", 1_800)?,
         };
@@ -70,6 +77,15 @@ impl AuthConfig {
         };
         if redirect.scheme() != "https" && !(redirect.scheme() == "http" && loopback) {
             return Err("El callback requiere HTTPS, salvo HTTP local para desarrollo".into());
+        }
+        let path = self.post_login_redirect_path.as_bytes();
+        if !path.starts_with(b"/")
+            || path.starts_with(b"//")
+            || !path
+                .iter()
+                .all(|byte| byte.is_ascii_alphanumeric() || b"/-._~".contains(byte))
+        {
+            return Err("POST_LOGIN_REDIRECT_PATH debe ser una ruta local absoluta sin query ni fragmento, por ejemplo /app".into());
         }
         Ok(())
     }
