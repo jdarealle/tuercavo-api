@@ -8,5 +8,6 @@ pub mod products;
 pub mod role_permissions;
 pub mod roles;
 pub mod sea_orm_active_enums;
+pub mod sessions;
 pub mod suppliers;
 pub mod users;

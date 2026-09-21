@@ -28,6 +28,8 @@ pub struct Model {
         on_delete = "Restrict"
     )]
     pub roles: BelongsTo<super::roles::Entity>,
+    #[sea_orm(has_many)]
+    pub sessions: HasMany<super::sessions::Entity>,
 }
 
 impl ActiveModelBehavior for ActiveModel {}

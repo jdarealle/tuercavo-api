@@ -5,5 +5,6 @@ pub use super::permissions::Entity as Permissions;
 pub use super::products::Entity as Products;
 pub use super::role_permissions::Entity as RolePermissions;
 pub use super::roles::Entity as Roles;
+pub use super::sessions::Entity as Sessions;
 pub use super::suppliers::Entity as Suppliers;
 pub use super::users::Entity as Users;

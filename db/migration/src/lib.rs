@@ -8,6 +8,7 @@ mod m20260917_000005_suppliers;
 mod m20260917_000006_products;
 mod m20260917_000007_indexes;
 mod m20260917_000008_reference_data;
+mod m20260921_000001_sessions;
 
 pub struct Migrator;
 
@@ -23,6 +24,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260917_000006_products::Migration),
             Box::new(m20260917_000007_indexes::Migration),
             Box::new(m20260917_000008_reference_data::Migration),
+            Box::new(m20260921_000001_sessions::Migration),
         ]
     }
 }

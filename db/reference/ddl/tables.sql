@@ -63,6 +63,33 @@ CREATE TABLE users (
     CONSTRAINT ck_users_full_name CHECK (char_length(full_name) BETWEEN 1 AND 150 AND full_name = btrim(full_name) AND full_name !~ '[[:cntrl:]]')
 );
 
+-- Sesión local: la cookie contiene 32 bytes aleatorios codificados en Base64url.
+-- Solo se persiste su hash SHA-256; nunca tokens OIDC ni la cookie en claro.
+-- issuer/subject/tenant_id son la identidad verificada al iniciar esta sesión.
+-- La aplicación comprueba tenant_id contra users.entra_tenant_id al autenticar.
+CREATE TABLE sessions (
+    session_id_hash BYTEA NOT NULL,
+    user_id BIGINT NOT NULL,
+    issuer VARCHAR(512) NOT NULL,
+    subject VARCHAR(255) NOT NULL,
+    tenant_id UUID NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    last_seen_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    expires_at TIMESTAMPTZ NOT NULL,
+    revoked_at TIMESTAMPTZ,
+    CONSTRAINT pk_sessions PRIMARY KEY (session_id_hash),
+    CONSTRAINT fk_sessions_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE RESTRICT,
+    CONSTRAINT ck_sessions_hash_length CHECK (octet_length(session_id_hash) = 32),
+    CONSTRAINT ck_sessions_issuer CHECK (issuer <> ''),
+    CONSTRAINT ck_sessions_subject CHECK (subject <> ''),
+    CONSTRAINT ck_sessions_expiration CHECK (expires_at > created_at),
+    CONSTRAINT ck_sessions_activity CHECK (last_seen_at >= created_at),
+    CONSTRAINT ck_sessions_revocation CHECK (revoked_at IS NULL OR revoked_at >= created_at)
+);
+CREATE INDEX idx_sessions_user_id ON sessions (user_id);
+CREATE INDEX idx_sessions_expires_at ON sessions (expires_at);
+CREATE INDEX idx_sessions_last_seen_at ON sessions (last_seen_at);
+
 -- Categorías planas; nombre único sin distinguir mayúsculas. Sin jerarquías.
 CREATE TABLE categories (
     id INTEGER GENERATED ALWAYS AS IDENTITY,

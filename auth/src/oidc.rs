@@ -1,0 +1,155 @@
+use openidconnect::{core::*, *};
+use serde::{Deserialize, Serialize};
+use std::time::Duration;
+use uuid::Uuid;
+
+use crate::{AuthConfig, AuthError};
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+struct EntraClaims {
+    tid: Uuid,
+    oid: Uuid,
+    #[serde(default)]
+    nbf: Option<i64>,
+}
+impl AdditionalClaims for EntraClaims {}
+
+type EntraResponse = StandardTokenResponse<
+    IdTokenFields<
+        EntraClaims,
+        EmptyExtraTokenFields,
+        CoreGenderClaim,
+        CoreJweContentEncryptionAlgorithm,
+        CoreJwsSigningAlgorithm,
+    >,
+    CoreTokenType,
+>;
+type EntraClient<A = EndpointNotSet, T = EndpointNotSet, U = EndpointNotSet> = Client<
+    EntraClaims,
+    CoreAuthDisplay,
+    CoreGenderClaim,
+    CoreJweContentEncryptionAlgorithm,
+    CoreJsonWebKey,
+    CoreAuthPrompt,
+    StandardErrorResponse<CoreErrorResponseType>,
+    EntraResponse,
+    CoreTokenIntrospectionResponse,
+    CoreRevocableToken,
+    CoreRevocationErrorResponse,
+    A,
+    EndpointNotSet,
+    EndpointNotSet,
+    EndpointNotSet,
+    T,
+    U,
+>;
+
+pub(crate) struct OidcProvider {
+    client: EntraClient<EndpointSet, EndpointMaybeSet, EndpointMaybeSet>,
+    http: reqwest::Client,
+    tenant_id: Uuid,
+}
+
+pub(crate) struct VerifiedIdentity {
+    pub issuer: String,
+    pub subject: String,
+    pub tenant_id: Uuid,
+    pub object_id: Uuid,
+}
+
+impl OidcProvider {
+    pub async fn discover(config: &AuthConfig) -> Result<Self, AuthError> {
+        let http = reqwest::ClientBuilder::new()
+            .redirect(reqwest::redirect::Policy::none())
+            .timeout(Duration::from_secs(10))
+            .build()
+            .map_err(|_| AuthError::Internal)?;
+        let metadata = CoreProviderMetadata::discover_async(
+            IssuerUrl::new(config.issuer().to_string()).map_err(|_| AuthError::Internal)?,
+            &http,
+        )
+        .await
+        .map_err(|_| AuthError::Provider)?;
+        let client = EntraClient::from_provider_metadata(
+            metadata,
+            ClientId::new(config.client_id.to_string()),
+            Some(ClientSecret::new(config.client_secret.clone())),
+        )
+        .set_redirect_uri(
+            RedirectUrl::new(config.redirect_uri.to_string()).map_err(|_| AuthError::Internal)?,
+        );
+        Ok(Self {
+            client,
+            http,
+            tenant_id: config.tenant_id,
+        })
+    }
+
+    pub fn authorize(&self, challenge: PkceCodeChallenge) -> (url::Url, CsrfToken, Nonce) {
+        self.client
+            .authorize_url(
+                CoreAuthenticationFlow::AuthorizationCode,
+                CsrfToken::new_random,
+                Nonce::new_random,
+            )
+            .add_scope(Scope::new("profile".into()))
+            .add_scope(Scope::new("email".into()))
+            .set_pkce_challenge(challenge)
+            .url()
+    }
+
+    pub async fn exchange(
+        &self,
+        code: String,
+        verifier: PkceCodeVerifier,
+        nonce: Nonce,
+    ) -> Result<VerifiedIdentity, AuthError> {
+        let response = self
+            .client
+            .exchange_code(AuthorizationCode::new(code))
+            .map_err(|_| AuthError::Internal)?
+            .set_pkce_verifier(verifier)
+            .request_async(&self.http)
+            .await
+            .map_err(|_| AuthError::Provider)?;
+        let token = response.id_token().ok_or(AuthError::Provider)?;
+        let verifier = self.client.id_token_verifier();
+        let claims = token
+            .claims(&verifier, &nonce)
+            .map_err(|_| AuthError::Provider)?;
+        let extra = claims.additional_claims();
+        if extra.tid != self.tenant_id
+            || extra.oid.is_nil()
+            || extra
+                .nbf
+                .is_some_and(|nbf| nbf > chrono::Utc::now().timestamp())
+        {
+            return Err(AuthError::Forbidden);
+        }
+        if let Some(expected) = claims.access_token_hash() {
+            let actual = AccessTokenHash::from_token(
+                response.access_token(),
+                token.signing_alg().map_err(|_| AuthError::Provider)?,
+                token
+                    .signing_key(&verifier)
+                    .map_err(|_| AuthError::Provider)?,
+            )
+            .map_err(|_| AuthError::Provider)?;
+            if actual != *expected {
+                return Err(AuthError::Provider);
+            }
+        }
+        let subject = claims.subject().as_str();
+        let issuer = claims.issuer().as_str();
+        if subject.is_empty() || subject.chars().count() > 255 || issuer.chars().count() > 512 {
+            return Err(AuthError::Provider);
+        }
+        // Return only verified identity. ID/access/refresh tokens are dropped here.
+        Ok(VerifiedIdentity {
+            issuer: issuer.into(),
+            subject: subject.into(),
+            tenant_id: extra.tid,
+            object_id: extra.oid,
+        })
+    }
+}
