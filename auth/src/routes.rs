@@ -5,9 +5,9 @@ use axum::{
     response::{IntoResponse, Redirect, Response},
 };
 use axum_extra::extract::cookie::CookieJar;
-use openidconnect::{CsrfToken, PkceCodeChallenge};
+use openidconnect::{CsrfToken, PkceCodeChallenge, core::CoreAuthPrompt};
 use serde::Deserialize;
-use utoipa::IntoParams;
+use utoipa::{IntoParams, ToSchema};
 use utoipa_axum::{router::OpenApiRouter, routes};
 
 use crate::{
@@ -25,6 +25,29 @@ where
         .routes(routes!(callback))
         .routes(routes!(me))
         .routes(routes!(logout))
+        .routes(routes!(entra_logout))
+}
+
+#[derive(Deserialize, IntoParams)]
+#[into_params(parameter_in = Query)]
+struct LoginParams {
+    prompt: Option<LoginPrompt>,
+}
+
+#[derive(Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+enum LoginPrompt {
+    Login,
+    SelectAccount,
+}
+
+impl From<LoginPrompt> for CoreAuthPrompt {
+    fn from(prompt: LoginPrompt) -> Self {
+        match prompt {
+            LoginPrompt::Login => Self::Login,
+            LoginPrompt::SelectAccount => Self::SelectAccount,
+        }
+    }
 }
 
 #[derive(Deserialize, IntoParams)]
@@ -35,12 +58,20 @@ struct Callback {
     error: Option<String>,
 }
 
-#[utoipa::path(get, path = "/auth/login", tag = "auth", operation_id = "login", responses(
+#[utoipa::path(get, path = "/auth/login", tag = "auth", operation_id = "login", params(LoginParams), responses(
     (status = 303, description = "Redirección a Microsoft Entra ID"),
+    (status = 400, description = "Valor de prompt inválido"),
     (status = 503, body = AuthErrorResponse)))]
-async fn login(State(state): State<AuthState>, jar: CookieJar) -> Result<Response, AuthError> {
+async fn login(
+    State(state): State<AuthState>,
+    jar: CookieJar,
+    Query(params): Query<LoginParams>,
+) -> Result<Response, AuthError> {
     let (challenge, verifier) = PkceCodeChallenge::new_random_sha256();
-    let (url, csrf, nonce) = state.0.provider.authorize(challenge);
+    let (url, csrf, nonce) = state
+        .0
+        .provider
+        .authorize(challenge, params.prompt.map(Into::into));
     let token = SessionToken::generate().map_err(|_| AuthError::Internal)?;
     let previous = jar
         .get(state.0.cookies.flow_name())
@@ -169,4 +200,37 @@ async fn logout(
         StatusCode::NO_CONTENT,
     )
         .into_response())
+}
+
+#[utoipa::path(get, path = "/auth/entra-logout", tag = "auth", operation_id = "entra_logout", responses(
+    (status = 303, description = "Redirección al cierre de sesión de Microsoft Entra ID")))]
+async fn entra_logout(State(state): State<AuthState>) -> Response {
+    (
+        [
+            (header::CACHE_CONTROL, "no-store"),
+            (header::REFERRER_POLICY, "no-referrer"),
+        ],
+        Redirect::to(state.0.provider.logout_url().as_str()),
+    )
+        .into_response()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{LoginParams, LoginPrompt};
+    use axum::{extract::Query, http::Uri};
+
+    #[test]
+    fn login_accepts_only_supported_prompts() {
+        let uri: Uri = "/api/auth/login?prompt=login".parse().unwrap();
+        let Query(params): Query<LoginParams> = Query::try_from_uri(&uri).unwrap();
+        assert!(matches!(params.prompt, Some(LoginPrompt::Login)));
+
+        let uri: Uri = "/api/auth/login?prompt=select_account".parse().unwrap();
+        let Query(params): Query<LoginParams> = Query::try_from_uri(&uri).unwrap();
+        assert!(matches!(params.prompt, Some(LoginPrompt::SelectAccount)));
+
+        let uri: Uri = "/api/auth/login?prompt=none".parse().unwrap();
+        assert!(Query::<LoginParams>::try_from_uri(&uri).is_err());
+    }
 }

@@ -28,6 +28,7 @@ Crea `.env` a partir de [`.env.sample`](.env.sample) si todavía no existe y sus
 | `ENTRA_CLIENT_SECRET` | Valor del secreto de la aplicación. |
 | `OIDC_REDIRECT_URI` | Callback obligatorio; en local: `http://localhost:3000/api/auth/callback`. |
 | `POST_LOGIN_REDIRECT_PATH` | Ruta de regreso tras un login exitoso; predeterminado `/api/auth/me`. Cuando exista la SPA, configura una ruta suya, por ejemplo `/app`. |
+| `POST_LOGOUT_REDIRECT_URI` | Opcional. URL de la pantalla pública de salida de la SPA, del mismo origen que `OIDC_REDIRECT_URI`. Debe estar registrada como Redirect URI **Web** en Entra. Sin ella, Entra muestra su propia pantalla de salida. |
 | `SESSION_TTL_SECS` | Duración absoluta de la sesión: `28800` segundos (8 horas). |
 | `SESSION_IDLE_TTL_SECS` | Tiempo máximo sin actividad: `1800` segundos (30 minutos). |
 
@@ -56,6 +57,8 @@ http://localhost:3000/api/auth/callback
 ```
 
 Configura `ENTRA_TENANT_ID`, `ENTRA_CLIENT_ID` y `ENTRA_CLIENT_SECRET`. El secreto corresponde a su **valor**, no al identificador del secreto. La API consulta el proveedor OIDC durante el arranque, por lo que necesita acceso a Microsoft Entra ID.
+
+Si configuras `POST_LOGOUT_REDIRECT_URI`, registra esa URL exacta como otra Redirect URI **Web**. Por ejemplo, `http://localhost:3000/signed-out` debe mostrar una pantalla pública de la SPA que no inicie el login automáticamente.
 
 ### 5. Registrar el primer administrador
 
@@ -109,7 +112,9 @@ Las peticiones autenticadas de escritura requieren un encabezado `Origin` que co
 
 Los permisos se consultan en cada petición autenticada, por lo que un cambio de rol se aplica en la siguiente petición. Desactivar un usuario revoca sus sesiones. La administración impide desactivar o degradar al último administrador activo de un tenant.
 
-El logout revoca la sesión local y elimina la cookie; no cierra la sesión de Microsoft. La actividad renueva el límite de inactividad, pero nunca extiende el vencimiento absoluto.
+`POST /api/auth/logout` revoca la sesión local y elimina la cookie. Para cerrar también la sesión de Microsoft, la SPA debe esperar el `204` y después navegar con `window.location.assign('/api/auth/entra-logout')`. Esta ruta redirige el navegador al `end_session_endpoint` descubierto en Entra. Tras la salida, Entra redirige a `POST_LOGOUT_REDIRECT_URI` si está configurada; en caso contrario muestra su propia pantalla. Una llamada `fetch` a la ruta de Entra no sustituye la navegación del navegador.
+
+`GET /api/auth/login?prompt=select_account` muestra el selector de cuentas y `GET /api/auth/login?prompt=login` solicita nueva autenticación. El login sin `prompt` conserva el inicio de sesión único. Redirigir directamente al login después del logout local puede crear otra sesión sin interacción. La actividad renueva el límite de inactividad, pero nunca extiende el vencimiento absoluto.
 
 Los intentos de login pendientes permanecen en memoria durante cinco minutos. Reiniciar la API los invalida; varias instancias necesitan afinidad durante ese flujo. Las sesiones ya creadas se conservan en PostgreSQL y siguen sujetas a vencimiento, inactividad y revocación.
 
@@ -117,10 +122,11 @@ Los intentos de login pendientes permanecen en memoria durante cinco minutos. Re
 
 | Método | Ruta | Uso |
 | --- | --- | --- |
-| `GET` | `/api/auth/login` | Iniciar el flujo OIDC. |
+| `GET` | `/api/auth/login` | Iniciar el flujo OIDC; admite `prompt=select_account` o `prompt=login`. |
 | `GET` | `/api/auth/callback` | Recibir la respuesta del proveedor. |
 | `GET` | `/api/auth/me` | Consultar el usuario y sus permisos. |
 | `POST` | `/api/auth/logout` | Revocar la sesión local. |
+| `GET` | `/api/auth/entra-logout` | Redirigir el navegador al cierre de sesión de Entra después del logout local. |
 | `GET`, `POST` | `/api/products`, `/api/categories`, `/api/suppliers` | Listar o crear registros. |
 | `GET`, `PATCH`, `DELETE` | `/api/products/{public_id}`, `/api/categories/{public_id}`, `/api/suppliers/{public_id}` | Consultar, actualizar o eliminar un registro. |
 | `GET`, `POST` | `/api/users` | Listar o registrar usuarios previamente autorizados. |

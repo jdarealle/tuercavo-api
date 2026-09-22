@@ -48,6 +48,8 @@ pub(crate) struct OidcProvider {
     client: EntraClient<EndpointSet, EndpointMaybeSet, EndpointMaybeSet>,
     http: reqwest::Client,
     tenant_id: Uuid,
+    end_session_endpoint: EndSessionUrl,
+    post_logout_redirect_uri: Option<PostLogoutRedirectUrl>,
 }
 
 pub(crate) struct VerifiedIdentity {
@@ -64,12 +66,23 @@ impl OidcProvider {
             .timeout(Duration::from_secs(10))
             .build()
             .map_err(|_| AuthError::Internal)?;
-        let metadata = CoreProviderMetadata::discover_async(
+        let metadata = ProviderMetadataWithLogout::discover_async(
             IssuerUrl::new(config.issuer().to_string()).map_err(|_| AuthError::Internal)?,
             &http,
         )
         .await
         .map_err(|_| AuthError::Provider)?;
+        let end_session_endpoint = metadata
+            .additional_metadata()
+            .end_session_endpoint
+            .clone()
+            .ok_or(AuthError::Provider)?;
+        let post_logout_redirect_uri = config
+            .post_logout_redirect_uri
+            .as_ref()
+            .map(|uri| PostLogoutRedirectUrl::new(uri.to_string()))
+            .transpose()
+            .map_err(|_| AuthError::Internal)?;
         let client = EntraClient::from_provider_metadata(
             metadata,
             ClientId::new(config.client_id.to_string()),
@@ -82,11 +95,18 @@ impl OidcProvider {
             client,
             http,
             tenant_id: config.tenant_id,
+            end_session_endpoint,
+            post_logout_redirect_uri,
         })
     }
 
-    pub fn authorize(&self, challenge: PkceCodeChallenge) -> (url::Url, CsrfToken, Nonce) {
-        self.client
+    pub fn authorize(
+        &self,
+        challenge: PkceCodeChallenge,
+        prompt: Option<CoreAuthPrompt>,
+    ) -> (url::Url, CsrfToken, Nonce) {
+        let mut request = self
+            .client
             .authorize_url(
                 CoreAuthenticationFlow::AuthorizationCode,
                 CsrfToken::new_random,
@@ -94,8 +114,19 @@ impl OidcProvider {
             )
             .add_scope(Scope::new("profile".into()))
             .add_scope(Scope::new("email".into()))
-            .set_pkce_challenge(challenge)
-            .url()
+            .set_pkce_challenge(challenge);
+        if let Some(prompt) = prompt {
+            request = request.add_prompt(prompt);
+        }
+        request.url()
+    }
+
+    pub fn logout_url(&self) -> url::Url {
+        let mut request = LogoutRequest::from(self.end_session_endpoint.clone());
+        if let Some(uri) = &self.post_logout_redirect_uri {
+            request = request.set_post_logout_redirect_uri(uri.clone());
+        }
+        request.http_get_url()
     }
 
     pub async fn exchange(
