@@ -48,6 +48,22 @@ sea-orm-cli migrate up -d db/migration
 
 Las migraciones crean el esquema, los roles, los permisos y la tabla de sesiones. El archivo [`db/reference/ddl/tables.sql`](db/reference/ddl/tables.sql) sirve como referencia; la instalación se realiza mediante las migraciones.
 
+Para poblar opcionalmente una base de desarrollo con categorías, proveedores y productos de ejemplo, aplica el archivo después de las migraciones.
+
+Con `DATABASE_URL` exportada en la terminal:
+
+```sh
+psql "$DATABASE_URL" --set ON_ERROR_STOP=1 --file db/seeder/catalog.sql
+```
+
+Con los valores predeterminados de `compose.yml`:
+
+```sh
+podman compose exec -T postgres \
+  psql --username tuercavo --dbname tuercavo_dev --set ON_ERROR_STOP=1 \
+  < db/seeder/catalog.sql
+```
+
 ### 4. Configurar Microsoft Entra ID
 
 Registra una aplicación para el tenant configurado, siguiendo la [documentación oficial de Microsoft](https://learn.microsoft.com/en-us/entra/identity-platform/quickstart-register-app). Añade el callback como plataforma **Web**, con la URL exacta de `OIDC_REDIRECT_URI`:
