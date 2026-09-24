@@ -36,8 +36,16 @@ Crea `.env` a partir de [`.env.sample`](.env.sample) si todavía no existe y sus
 ### 2. Iniciar PostgreSQL
 
 ```sh
-podman-compose up -d
+podman compose up -d
 ```
+
+Para abrir una consola `psql` dentro del contenedor:
+
+```sh
+podman compose exec postgres sh -c 'exec psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
+```
+
+El comando usa el usuario y la base de datos configurados en `compose.yml`, incluso si los cambias mediante `PG_USER` y `PG_DB` en `.env`. Para salir de `psql`, escribe `\q`.
 
 ### 3. Aplicar las migraciones
 
@@ -49,7 +57,7 @@ sea-orm-cli migrate up -d db/migration
 
 Las migraciones crean el esquema, los roles, los permisos y las sesiones. El archivo [`db/reference/ddl/tables.sql`](db/reference/ddl/tables.sql) sirve como referencia; la instalación se realiza mediante las migraciones.
 
-Para poblar opcionalmente una base de desarrollo con categorías, proveedores y productos de ejemplo, aplica el archivo después de las migraciones.
+Para poblar opcionalmente una base de desarrollo recién migrada con categorías, proveedores y productos de ejemplo, aplica el archivo una sola vez después de las migraciones.
 
 Con `DATABASE_URL` exportada en la terminal:
 
@@ -60,7 +68,7 @@ psql "$DATABASE_URL" --set ON_ERROR_STOP=1 --file db/seeder/catalog.sql
 Con los valores predeterminados de `compose.yml`:
 
 ```sh
-podman-compose exec -T postgres \
+podman compose exec -T postgres \
   psql --username tuercavo --dbname tuercavo_dev --set ON_ERROR_STOP=1 \
   < db/seeder/catalog.sql
 ```
