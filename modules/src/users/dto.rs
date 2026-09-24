@@ -1,16 +1,7 @@
 use chrono::{DateTime, FixedOffset};
-use common::patch::Patch;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use utoipa::ToSchema;
 use uuid::Uuid;
-
-#[derive(Deserialize, ToSchema)]
-#[serde(deny_unknown_fields)]
-pub struct UpdateUser {
-    #[serde(default)]
-    #[schema(value_type = bool, required = false)]
-    pub is_active: Patch<bool>,
-}
 
 #[derive(Serialize, ToSchema)]
 pub struct UserResponse {

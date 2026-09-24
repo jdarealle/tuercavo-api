@@ -3,7 +3,7 @@ use auth::{AuthErrorResponse, Permission, Require};
 use axum::{Json, extract::State};
 use common::{
     error::{AppError, ErrorResponse},
-    http::{Json as Input, Path, Query},
+    http::{Path, Query},
     pagination::{Page, Pagination},
     state::AppState,
 };
@@ -52,17 +52,29 @@ pub async fn get(
     ))
 }
 
-#[utoipa::path(patch, path = "/users/{public_id}", tag = "users", operation_id = "update_user", params(("public_id" = Uuid, Path)), request_body = UpdateUser, responses(
-    (status = 200, body = UserResponse), (status = 400, body = ErrorResponse), (status = 404, body = ErrorResponse), (status = 409, body = ErrorResponse),
+#[utoipa::path(post, path = "/users/{public_id}/deactivate", tag = "users", operation_id = "deactivate_user", description = "Desactiva el acceso local y revoca todas las sesiones del usuario en una transacción. Su asignación en Entra se retira por separado.", params(("public_id" = Uuid, Path)), responses(
+    (status = 200, body = UserResponse, description = "Usuario desactivado y sesiones revocadas"), (status = 400, body = ErrorResponse), (status = 404, body = ErrorResponse),
     (status = 401, body = AuthErrorResponse), (status = 403, body = AuthErrorResponse), (status = 503, body = AuthErrorResponse)), security(("session" = [])))]
-pub async fn update(
+pub async fn deactivate(
     actor: Require<Update>,
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
-    Input(body): Input<UpdateUser>,
 ) -> Result<Json<UserResponse>, AppError> {
     Ok(Json(
-        service::update(&state.db, actor.0.user_id, state.auth.tenant_id(), id, body).await?,
+        service::deactivate(&state.db, actor.0.user_id, state.auth.tenant_id(), id).await?,
+    ))
+}
+
+#[utoipa::path(post, path = "/users/{public_id}/reactivate", tag = "users", operation_id = "reactivate_user", description = "Retira el bloqueo local sin restaurar sesiones. La asignación en Entra debe estar vigente y el usuario debe iniciar sesión de nuevo.", params(("public_id" = Uuid, Path)), responses(
+    (status = 200, body = UserResponse, description = "Bloqueo local retirado; requiere un nuevo login"), (status = 400, body = ErrorResponse), (status = 404, body = ErrorResponse),
+    (status = 401, body = AuthErrorResponse), (status = 403, body = AuthErrorResponse), (status = 503, body = AuthErrorResponse)), security(("session" = [])))]
+pub async fn reactivate(
+    actor: Require<Update>,
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<UserResponse>, AppError> {
+    Ok(Json(
+        service::reactivate(&state.db, actor.0.user_id, state.auth.tenant_id(), id).await?,
     ))
 }
 

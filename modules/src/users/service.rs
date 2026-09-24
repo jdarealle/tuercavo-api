@@ -79,17 +79,6 @@ pub async fn get(
     describe(db, user).await
 }
 
-// Serialize changes to the active admin set before rechecking the actor's permissions.
-async fn lock_admin(tx: &DatabaseTransaction) -> Result<i16, AppError> {
-    Ok(roles::Entity::find()
-        .filter(roles::Column::Code.eq("admin"))
-        .lock_exclusive()
-        .one(tx)
-        .await?
-        .ok_or(AppError::Internal)?
-        .id)
-}
-
 async fn actor<C: ConnectionTrait>(
     db: &C,
     actor_id: i64,
@@ -118,61 +107,50 @@ async fn target(
         .ok_or(AppError::NotFound)
 }
 
-async fn protect_last_admin(
-    tx: &DatabaseTransaction,
-    user: &users::Model,
-    admin_id: i16,
-    new_role: i16,
-    active: bool,
-) -> Result<(), AppError> {
-    if user.is_active && user.role_id == admin_id && (!active || new_role != admin_id) {
-        let others = users::Entity::find()
-            .filter(users::Column::RoleId.eq(admin_id))
-            .filter(users::Column::EntraTenantId.eq(user.entra_tenant_id))
-            .filter(users::Column::IsActive.eq(true))
-            .filter(users::Column::Id.ne(user.id))
-            .count(tx)
-            .await?;
-        if others == 0 {
-            return Err(AppError::conflict(
-                "No se puede desactivar ni degradar al último administrador activo",
-            ));
-        }
-    }
-    Ok(())
-}
-
-pub async fn update(
+async fn set_active(
     db: &DatabaseConnection,
     actor_id: i64,
     tenant: Uuid,
     public_id: Uuid,
-    input: UpdateUser,
+    active: bool,
 ) -> Result<UserResponse, AppError> {
-    let active = input.is_active.required("is_active")?;
     let tx = db.begin().await?;
-    let admin_id = lock_admin(&tx).await?;
     actor(&tx, actor_id, tenant, "users.update").await?;
     let user = target(&tx, tenant, public_id).await?;
-    protect_last_admin(
-        &tx,
-        &user,
-        admin_id,
-        user.role_id,
-        active.unwrap_or(user.is_active),
-    )
-    .await?;
-    if active == Some(false) {
+    if !active {
+        // Revoking on repeated calls also covers any session created by a
+        // concurrent login before this transaction acquired the user lock.
         auth::session::revoke_user(&tx, user.id).await?;
     }
-    let mut user = user.into_active_model();
-    if let Some(active) = active {
-        user.is_active = Set(active);
-    }
-    user.updated_at = Set(chrono::Utc::now().fixed_offset());
-    let result = describe(&tx, user.update(&tx).await?).await?;
+    let user = if user.is_active == active {
+        user
+    } else {
+        let mut model = user.into_active_model();
+        model.is_active = Set(active);
+        model.updated_at = Set(chrono::Utc::now().fixed_offset());
+        model.update(&tx).await?
+    };
+    let result = describe(&tx, user).await?;
     tx.commit().await?;
     Ok(result)
+}
+
+pub async fn deactivate(
+    db: &DatabaseConnection,
+    actor_id: i64,
+    tenant: Uuid,
+    public_id: Uuid,
+) -> Result<UserResponse, AppError> {
+    set_active(db, actor_id, tenant, public_id, false).await
+}
+
+pub async fn reactivate(
+    db: &DatabaseConnection,
+    actor_id: i64,
+    tenant: Uuid,
+    public_id: Uuid,
+) -> Result<UserResponse, AppError> {
+    set_active(db, actor_id, tenant, public_id, true).await
 }
 
 pub async fn roles(db: &DatabaseConnection) -> Result<Vec<RoleResponse>, AppError> {
@@ -199,4 +177,138 @@ pub async fn permissions(db: &DatabaseConnection) -> Result<Vec<PermissionRespon
             description: permission.description,
         })
         .collect())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use entity::{permissions, role_permissions};
+    use sea_orm::{DbBackend, DbErr, IntoMockRow, MockDatabase, MockExecResult};
+
+    fn admin(active: bool) -> users::Model {
+        let now = chrono::Utc::now().fixed_offset();
+        users::Model {
+            id: 1,
+            public_id: Uuid::from_u128(1),
+            role_id: 1,
+            entra_tenant_id: Uuid::from_u128(2),
+            entra_object_id: Uuid::from_u128(3),
+            email: None,
+            full_name: Some("Administrador".into()),
+            is_active: active,
+            created_at: now,
+            updated_at: now,
+        }
+    }
+
+    fn role() -> roles::Model {
+        roles::Model {
+            id: 1,
+            code: "admin".into(),
+            name: "Administrador".into(),
+        }
+    }
+
+    fn db_for_change(initially_active: bool, result_active: bool) -> MockDatabase {
+        MockDatabase::new(DbBackend::Postgres).append_query_results([
+            vec![admin(true).into_mock_row()],
+            vec![role().into_mock_row()],
+            vec![
+                role_permissions::Model {
+                    role_id: 1,
+                    permission_id: 1,
+                }
+                .into_mock_row(),
+            ],
+            vec![
+                permissions::Model {
+                    id: 1,
+                    code: "users.update".into(),
+                    description: "Administrar usuarios".into(),
+                }
+                .into_mock_row(),
+            ],
+            vec![admin(initially_active).into_mock_row()],
+            vec![admin(result_active).into_mock_row()],
+            vec![role().into_mock_row()],
+        ])
+    }
+
+    #[tokio::test]
+    async fn deactivation_revokes_sessions_and_commits_even_for_only_admin() {
+        let db = db_for_change(true, false)
+            .append_exec_results([MockExecResult {
+                rows_affected: 2,
+                last_insert_id: 0,
+            }])
+            .into_connection();
+
+        let result = deactivate(&db, 1, Uuid::from_u128(2), Uuid::from_u128(1))
+            .await
+            .unwrap();
+        assert!(!result.is_active);
+
+        let log = db.into_transaction_log();
+        assert_eq!(log.len(), 1);
+        let sql: Vec<_> = log[0]
+            .statements()
+            .iter()
+            .map(|statement| statement.sql.as_str())
+            .collect();
+        let revoke = sql
+            .iter()
+            .position(|sql| sql.starts_with("UPDATE \"sessions\""))
+            .unwrap();
+        let disable = sql
+            .iter()
+            .position(|sql| sql.starts_with("UPDATE \"users\""))
+            .unwrap();
+        assert!(revoke < disable);
+        assert!(sql[revoke].contains("\"revoked_at\" IS NULL"));
+        assert_eq!(sql.last(), Some(&"COMMIT"));
+    }
+
+    #[tokio::test]
+    async fn failed_session_revocation_cannot_commit_deactivation() {
+        let db = db_for_change(true, false)
+            .append_exec_errors([DbErr::Custom("revocation failed".into())])
+            .into_connection();
+
+        assert!(
+            deactivate(&db, 1, Uuid::from_u128(2), Uuid::from_u128(1))
+                .await
+                .is_err()
+        );
+
+        let log = db.into_transaction_log();
+        assert_eq!(log.len(), 1);
+        let sql: Vec<_> = log[0]
+            .statements()
+            .iter()
+            .map(|statement| statement.sql.as_str())
+            .collect();
+        assert!(sql.iter().any(|sql| sql.starts_with("UPDATE \"sessions\"")));
+        assert!(!sql.iter().any(|sql| sql.starts_with("UPDATE \"users\"")));
+        assert_ne!(sql.last(), Some(&"COMMIT"));
+    }
+
+    #[tokio::test]
+    async fn reactivation_does_not_restore_sessions() {
+        let db = db_for_change(false, true).into_connection();
+
+        let result = reactivate(&db, 1, Uuid::from_u128(2), Uuid::from_u128(1))
+            .await
+            .unwrap();
+        assert!(result.is_active);
+
+        let log = db.into_transaction_log();
+        let sql: Vec<_> = log[0]
+            .statements()
+            .iter()
+            .map(|statement| statement.sql.as_str())
+            .collect();
+        assert!(sql.iter().any(|sql| sql.starts_with("UPDATE \"users\"")));
+        assert!(!sql.iter().any(|sql| sql.starts_with("UPDATE \"sessions\"")));
+        assert_eq!(sql.last(), Some(&"COMMIT"));
+    }
 }

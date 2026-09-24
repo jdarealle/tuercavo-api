@@ -17,3 +17,6 @@ chrono.workspace = true
 entity = { path = "../db/entity" }
 common = { path = "../common" }
 tokio.workspace = true
+
+[dev-dependencies]
+sea-orm = { workspace = true, features = ["mock"] }

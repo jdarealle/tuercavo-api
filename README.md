@@ -118,7 +118,9 @@ Las peticiones autenticadas de escritura requieren un encabezado `Origin` que co
 | `capturista` | Consulta, creación y actualización del catálogo. |
 | `consultor` | Consulta del catálogo. |
 
-Los permisos se consultan en cada petición autenticada. Un cambio de App Role en Entra se refleja localmente al siguiente login, no en una sesión ya abierta. Desactivar un usuario desde la API revoca sus sesiones locales; la sincronización de bajas hechas solo en Entra queda pendiente de un diseño separado. La administración local impide desactivar al último administrador activo de un tenant.
+Los permisos se consultan en cada petición autenticada. Un cambio de App Role en Entra se refleja localmente al siguiente login, no en una sesión ya abierta. Para dar de baja a una persona, un administrador llama primero a `POST /api/users/{public_id}/deactivate`: la API desactiva al usuario y revoca todas sus sesiones en una transacción. Desde que se confirma, no puede usar las sesiones anteriores ni iniciar otra, aunque aún tenga acceso en Entra. Después, el administrador de Entra retira su asignación a la aplicación empresarial (o lo quita de todos los grupos que le conceden acceso). Los cambios hechos solo en Entra no revocan automáticamente las sesiones locales.
+
+Para devolverle el acceso, primero se restablece su asignación en Entra y luego un administrador llama a `POST /api/users/{public_id}/reactivate`. La reactivación retira el bloqueo local, pero no restaura las sesiones revocadas: la persona debe iniciar sesión de nuevo. Ambas operaciones requieren `users.update`. Si se desactiva al único administrador local, el administrador del tenant puede asignar el App Role `admin` a otra persona en Entra; al entrar por primera vez, esa persona obtiene el permiso para reactivarlo.
 
 `POST /api/auth/logout` revoca la sesión local y elimina la cookie. Para cerrar también la sesión de Microsoft, la SPA debe esperar el `204` y después navegar con `window.location.assign('/api/auth/entra-logout')`. Esta ruta redirige el navegador al `end_session_endpoint` descubierto en Entra. Tras la salida, Entra redirige a `POST_LOGOUT_REDIRECT_URI` si está configurada; en caso contrario muestra su propia pantalla. Una llamada `fetch` a la ruta de Entra no sustituye la navegación del navegador.
 
@@ -138,7 +140,9 @@ Los intentos de login pendientes permanecen en memoria durante cinco minutos. Re
 | `GET`, `POST` | `/api/products`, `/api/categories`, `/api/suppliers` | Listar o crear registros. |
 | `GET`, `PATCH`, `DELETE` | `/api/products/{public_id}`, `/api/categories/{public_id}`, `/api/suppliers/{public_id}` | Consultar, actualizar o eliminar un registro. |
 | `GET` | `/api/users` | Listar usuarios que ya iniciaron sesión por primera vez. |
-| `GET`, `PATCH` | `/api/users/{public_id}` | Consultar un usuario o cambiar su estado local `is_active`. |
+| `GET` | `/api/users/{public_id}` | Consultar un usuario. |
+| `POST` | `/api/users/{public_id}/deactivate` | Desactivar al usuario y revocar todas sus sesiones locales. |
+| `POST` | `/api/users/{public_id}/reactivate` | Reactivar el acceso local; requiere un nuevo login. |
 | `GET` | `/api/roles`, `/api/permissions` | Consultar roles y permisos disponibles. |
 | `GET` | `/api/health/live` | Comprobar que el servidor responde. |
 | `GET` | `/api/health/ready` | Comprobar la conexión a PostgreSQL. |

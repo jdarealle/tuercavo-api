@@ -85,8 +85,6 @@ Con callback HTTPS, las cookies se llaman `__Host-session` y `__Host-oidc-flow` 
 
 La tabla `sessions` contiene `session_id_hash`, `user_id`, issuer, subject, tenant, fecha de creación, última actividad, vencimiento absoluto y revocación opcional. La crea la [migración de sesiones](../db/migration/src/m20260921_000001_sessions.rs); las entidades se generan en [`db/entity`](../db/entity/). La tabla `users` aporta la identidad local, actividad y rol; `roles`, `permissions` y `role_permissions` definen los permisos.
 
-La desactivación local protege al último administrador activo. Una reasignación de roles en Entra puede cambiar ese conjunto al siguiente login sin pasar por esa protección.
-
 `SessionStore::authenticate` usa un `UPDATE` condicional: solo acepta una sesión no revocada, del tenant e issuer configurados, cuyo vencimiento absoluto y límite de inactividad sigan vigentes. Si la acepta, actualiza `last_seen_at` sin hacerlo retroceder cuando coinciden varias peticiones. La actividad no extiende el vencimiento absoluto. La limpieza periódica elimina sesiones revocadas o vencidas, pero la comprobación de cada petición ya impide utilizarlas antes de esa limpieza.
 
 ## Autenticación y autorización por petición
@@ -97,7 +95,13 @@ Los handlers de catálogo y administración declaran `Require<P>`, donde cada ti
 2. `SessionStore::authenticate` verifica la sesión y carga el usuario local. `identity::load_user` exige que siga activo y consulta en PostgreSQL su rol y los códigos de permiso actuales. `Principal` incluye identificador público, email, nombre, tenant, Object ID, rol y permisos. El `user_id` interno no se serializa ni aparece en OpenAPI.
 3. `Require<P>` comprueba que el código de permiso requerido esté en `Principal.permissions`. Sin sesión válida devuelve `401`; falta de permiso o usuario desactivado devuelve `403`. Los errores de base de datos se traducen en indisponibilidad sin exponer SQL ni credenciales.
 
-Como los permisos se leen en cada petición, un cambio del `role_id` local surte efecto en la siguiente solicitud autorizada. El cambio de App Role en Entra se refleja en ese campo al siguiente login. Al desactivar un usuario localmente, `modules` llama a `session::revoke_user` para revocar sus sesiones. `auth` no decide qué campos de catálogo puede modificar cada rol ni protege por sí solo al último administrador: esas reglas están en los handlers y servicios de `modules`.
+Como los permisos se leen en cada petición, un cambio del `role_id` local surte efecto en la siguiente solicitud autorizada. El cambio de App Role en Entra se refleja en ese campo al siguiente login. `auth` no decide qué campos de catálogo puede modificar cada rol: esas reglas están en los handlers y servicios de `modules`.
+
+## Desactivación y reactivación
+
+Un administrador de Tuercavo llama a `POST /api/users/{public_id}/deactivate` antes de retirar la asignación a la aplicación empresarial en Entra. `modules` bloquea la fila del usuario y, en la misma transacción, marca `is_active = false` y llama a `session::revoke_user` para revocar todas sus sesiones. Las sesiones revocadas no vuelven a ser válidas. `SessionStore::replace` también rechaza el siguiente login mientras el usuario esté inactivo. Después de confirmar la desactivación local, el administrador de Entra retira la asignación directa o la pertenencia a los grupos que conceden acceso.
+
+Para reactivar, el administrador restablece la asignación en Entra y llama a `POST /api/users/{public_id}/reactivate`. La API marca `is_active = true` sin restaurar sesiones; el usuario necesita un nuevo login para crear una. Ambas operaciones requieren el permiso `users.update`. Si se desactiva al único administrador local, el administrador del tenant puede asignar el App Role `admin` a otra persona en Entra. Su primer login crea el usuario local y le permite reactivar al anterior.
 
 ## Salida de sesión
 

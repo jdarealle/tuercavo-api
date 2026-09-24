@@ -203,3 +203,79 @@ async fn database_now<C: ConnectionTrait>(db: &C) -> Result<DateTimeWithTimeZone
         .ok_or_else(|| DbErr::Custom("Database clock unavailable".into()))?
         .try_get("", "db_now")
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sea_orm::{DbBackend, IntoMockRow, MockDatabase};
+    use std::collections::BTreeMap;
+
+    #[tokio::test]
+    async fn inactive_user_cannot_create_a_new_session() {
+        let tenant = Uuid::from_u128(1);
+        let object = Uuid::from_u128(2);
+        let now = chrono::Utc::now().fixed_offset();
+        let db = MockDatabase::new(DbBackend::Postgres)
+            .append_query_results([
+                vec![
+                    roles::Model {
+                        id: 1,
+                        code: "admin".into(),
+                        name: "Administrador".into(),
+                    }
+                    .into_mock_row(),
+                ],
+                vec![BTreeMap::from([("db_now", now.into())]).into_mock_row()],
+                vec![], // Existing identity: INSERT ... ON CONFLICT DO NOTHING.
+                vec![
+                    users::Model {
+                        id: 1,
+                        public_id: Uuid::from_u128(3),
+                        role_id: 1,
+                        entra_tenant_id: tenant,
+                        entra_object_id: object,
+                        email: None,
+                        full_name: None,
+                        is_active: false,
+                        created_at: now,
+                        updated_at: now,
+                    }
+                    .into_mock_row(),
+                ],
+            ])
+            .into_connection();
+        let store = SessionStore {
+            db: db.clone(),
+            tenant_id: tenant,
+            issuer: "https://login.microsoftonline.com/test/v2.0".into(),
+            absolute_ttl: 3600,
+            idle_ttl: 900,
+        };
+        let identity = VerifiedIdentity {
+            issuer: store.issuer.clone(),
+            subject: "subject".into(),
+            tenant_id: tenant,
+            object_id: object,
+            role: "admin".into(),
+            full_name: None,
+        };
+
+        assert!(matches!(
+            store.replace(None, &[0; 32], &identity).await,
+            Err(AuthError::Forbidden)
+        ));
+
+        let log = db.into_transaction_log();
+        assert_eq!(log.len(), 1);
+        let sql: Vec<_> = log[0]
+            .statements()
+            .iter()
+            .map(|statement| statement.sql.as_str())
+            .collect();
+        assert!(
+            !sql.iter()
+                .any(|sql| sql.starts_with("INSERT INTO \"sessions\""))
+        );
+        assert_ne!(sql.last(), Some(&"COMMIT"));
+    }
+}
