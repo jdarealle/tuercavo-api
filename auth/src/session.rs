@@ -1,12 +1,12 @@
 use chrono::Duration;
-use entity::{sessions, users};
+use entity::{roles, sessions, users};
 use sea_orm::{
     ActiveModelTrait,
     ActiveValue::Set,
     ColumnTrait, ConnectionTrait, DatabaseConnection, DbErr, EntityTrait, QueryFilter, QuerySelect,
     TransactionTrait,
     entity::prelude::DateTimeWithTimeZone,
-    sea_query::{Alias, Expr, ExprTrait, Func, Query},
+    sea_query::{Alias, Expr, ExprTrait, Func, OnConflict, Query},
 };
 use uuid::Uuid;
 
@@ -49,18 +49,49 @@ impl SessionStore {
             return Err(AuthError::Forbidden);
         }
         let tx = self.db.begin().await?;
-        // Local enrollment and roles remain explicit; never link users by email.
+        let role = roles::Entity::find()
+            .filter(roles::Column::Code.eq(&identity.role))
+            .one(&tx)
+            .await?
+            .ok_or(AuthError::Forbidden)?;
+        let now = database_now(&tx).await?;
+        // The unique tenant/object key makes concurrent first logins idempotent.
+        users::Entity::insert(users::ActiveModel {
+            role_id: Set(role.id),
+            entra_tenant_id: Set(identity.tenant_id),
+            entra_object_id: Set(identity.object_id),
+            // Entra's email claim is not an addressable contact field.
+            email: Set(None),
+            full_name: Set(identity.full_name.clone()),
+            created_at: Set(now),
+            updated_at: Set(now),
+            ..Default::default()
+        })
+        .on_conflict(
+            OnConflict::columns([users::Column::EntraTenantId, users::Column::EntraObjectId])
+                .do_nothing()
+                .to_owned(),
+        )
+        .try_insert()
+        .exec(&tx)
+        .await?;
         let user = users::Entity::find()
             .filter(users::Column::EntraTenantId.eq(identity.tenant_id))
             .filter(users::Column::EntraObjectId.eq(identity.object_id))
-            .lock_shared()
+            .lock_exclusive()
             .one(&tx)
             .await?
             .ok_or(AuthError::Forbidden)?;
         if !user.is_active {
             return Err(AuthError::Forbidden);
         }
-        let now = database_now(&tx).await?;
+        if user.role_id != role.id || user.full_name != identity.full_name {
+            let mut update: users::ActiveModel = user.clone().into();
+            update.role_id = Set(role.id);
+            update.full_name = Set(identity.full_name.clone());
+            update.updated_at = Set(now);
+            update.update(&tx).await?;
+        }
         if let Some(previous) = previous {
             revoke(&tx, previous).await?;
         }

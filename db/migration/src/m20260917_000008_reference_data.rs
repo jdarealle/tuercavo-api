@@ -9,7 +9,7 @@ const ROLES: [(&str, &str); 3] = [
     ("consultor", "Consultor"),
 ];
 
-const PERMISSIONS: [(&str, &str); 18] = [
+const PERMISSIONS: [(&str, &str); 16] = [
     ("products.read", "Consultar productos"),
     ("products.create", "Crear productos"),
     ("products.update", "Editar productos"),
@@ -23,9 +23,7 @@ const PERMISSIONS: [(&str, &str); 18] = [
     ("suppliers.update", "Editar proveedores"),
     ("suppliers.delete", "Borrar proveedores"),
     ("users.read", "Consultar usuarios"),
-    ("users.create", "Crear usuarios"),
     ("users.update", "Editar y desactivar usuarios"),
-    ("users.assign_role", "Asignar rol a usuarios"),
     ("roles.read", "Consultar roles"),
     ("permissions.read", "Consultar permisos"),
 ];

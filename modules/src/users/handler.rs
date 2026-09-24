@@ -1,10 +1,6 @@
 use super::{dto::*, service};
 use auth::{AuthErrorResponse, Permission, Require};
-use axum::{
-    Json,
-    extract::State,
-    http::{StatusCode, header},
-};
+use axum::{Json, extract::State};
 use common::{
     error::{AppError, ErrorResponse},
     http::{Json as Input, Path, Query},
@@ -17,17 +13,9 @@ pub struct Read;
 impl Permission for Read {
     const CODE: &'static str = "users.read";
 }
-pub struct Create;
-impl Permission for Create {
-    const CODE: &'static str = "users.create";
-}
 pub struct Update;
 impl Permission for Update {
     const CODE: &'static str = "users.update";
-}
-pub struct Assign;
-impl Permission for Assign {
-    const CODE: &'static str = "users.assign_role";
 }
 pub struct ReadRoles;
 impl Permission for ReadRoles {
@@ -64,29 +52,6 @@ pub async fn get(
     ))
 }
 
-#[utoipa::path(post, path = "/users", tag = "users", operation_id = "create_user", request_body = CreateUser, responses(
-    (status = 201, body = UserResponse, headers(("Location" = String))), (status = 400, body = ErrorResponse), (status = 409, body = ErrorResponse),
-    (status = 401, body = AuthErrorResponse), (status = 403, body = AuthErrorResponse), (status = 503, body = AuthErrorResponse)), security(("session" = [])))]
-pub async fn create(
-    actor: Require<Create>,
-    State(state): State<AppState>,
-    Input(body): Input<CreateUser>,
-) -> Result<
-    (
-        StatusCode,
-        [(header::HeaderName, String); 1],
-        Json<UserResponse>,
-    ),
-    AppError,
-> {
-    let result = service::create(&state.db, actor.0.user_id, state.auth.tenant_id(), body).await?;
-    Ok((
-        StatusCode::CREATED,
-        [(header::LOCATION, format!("/api/users/{}", result.public_id))],
-        Json(result),
-    ))
-}
-
 #[utoipa::path(patch, path = "/users/{public_id}", tag = "users", operation_id = "update_user", params(("public_id" = Uuid, Path)), request_body = UpdateUser, responses(
     (status = 200, body = UserResponse), (status = 400, body = ErrorResponse), (status = 404, body = ErrorResponse), (status = 409, body = ErrorResponse),
     (status = 401, body = AuthErrorResponse), (status = 403, body = AuthErrorResponse), (status = 503, body = AuthErrorResponse)), security(("session" = [])))]
@@ -98,20 +63,6 @@ pub async fn update(
 ) -> Result<Json<UserResponse>, AppError> {
     Ok(Json(
         service::update(&state.db, actor.0.user_id, state.auth.tenant_id(), id, body).await?,
-    ))
-}
-
-#[utoipa::path(put, path = "/users/{public_id}/role", tag = "users", operation_id = "assign_role", params(("public_id" = Uuid, Path)), request_body = AssignRole, responses(
-    (status = 200, body = UserResponse), (status = 400, body = ErrorResponse), (status = 404, body = ErrorResponse), (status = 409, body = ErrorResponse),
-    (status = 401, body = AuthErrorResponse), (status = 403, body = AuthErrorResponse), (status = 503, body = AuthErrorResponse)), security(("session" = [])))]
-pub async fn assign_role(
-    actor: Require<Assign>,
-    State(state): State<AppState>,
-    Path(id): Path<Uuid>,
-    Input(body): Input<AssignRole>,
-) -> Result<Json<UserResponse>, AppError> {
-    Ok(Json(
-        service::assign_role(&state.db, actor.0.user_id, state.auth.tenant_id(), id, body).await?,
     ))
 }
 

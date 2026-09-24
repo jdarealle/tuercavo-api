@@ -11,7 +11,7 @@
 
 CREATE TYPE catalog_status AS ENUM ('active', 'inactive', 'archived');
 
--- Roles locales fijos; no se enlazan automáticamente con roles externos de Entra.
+-- Roles locales fijos; cada login válido sincroniza el rol asignado en Entra.
 CREATE TABLE roles (
     id SMALLINT GENERATED ALWAYS AS IDENTITY,
     code VARCHAR(32) NOT NULL,
@@ -42,7 +42,7 @@ CREATE TABLE role_permissions (
     CONSTRAINT fk_role_permissions_permission FOREIGN KEY (permission_id) REFERENCES permissions(id) ON DELETE RESTRICT
 );
 
--- Identidad por tenant/object ID. Email es metadata requerida, no única.
+-- Identidad por tenant/object ID. Email y nombre son metadatos opcionales, no únicos.
 -- Un único rol por usuario; los usuarios se desactivan, no se borran por API.
 CREATE TABLE users (
     id BIGINT GENERATED ALWAYS AS IDENTITY,
@@ -50,8 +50,8 @@ CREATE TABLE users (
     role_id SMALLINT NOT NULL,
     entra_tenant_id UUID NOT NULL,
     entra_object_id UUID NOT NULL,
-    email VARCHAR(254) NOT NULL,
-    full_name VARCHAR(150) NOT NULL,
+    email VARCHAR(254),
+    full_name VARCHAR(150),
     is_active BOOLEAN NOT NULL DEFAULT true,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -184,9 +184,7 @@ INSERT INTO permissions (code, description) VALUES
     ('suppliers.update', 'Editar proveedores'),
     ('suppliers.delete', 'Borrar proveedores'),
     ('users.read', 'Consultar usuarios'),
-    ('users.create', 'Crear usuarios'),
     ('users.update', 'Editar y desactivar usuarios'),
-    ('users.assign_role', 'Asignar rol a usuarios'),
     ('roles.read', 'Consultar roles'),
     ('permissions.read', 'Consultar permisos');
 
@@ -199,8 +197,7 @@ FROM (VALUES
     ('admin', 'categories.update'), ('admin', 'categories.delete'),
     ('admin', 'suppliers.read'), ('admin', 'suppliers.create'),
     ('admin', 'suppliers.update'), ('admin', 'suppliers.delete'),
-    ('admin', 'users.read'), ('admin', 'users.create'),
-    ('admin', 'users.update'), ('admin', 'users.assign_role'),
+    ('admin', 'users.read'), ('admin', 'users.update'),
     ('admin', 'roles.read'), ('admin', 'permissions.read'),
     ('capturista', 'products.read'), ('capturista', 'products.create'),
     ('capturista', 'products.update'), ('capturista', 'categories.read'),

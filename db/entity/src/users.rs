@@ -15,8 +15,8 @@ pub struct Model {
     pub entra_tenant_id: Uuid,
     #[sea_orm(unique_key = "uq_users_entra_identity")]
     pub entra_object_id: Uuid,
-    pub email: String,
-    pub full_name: String,
+    pub email: Option<String>,
+    pub full_name: Option<String>,
     pub is_active: bool,
     pub created_at: DateTimeWithTimeZone,
     pub updated_at: DateTimeWithTimeZone,

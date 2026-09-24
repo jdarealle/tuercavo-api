@@ -3,7 +3,6 @@
 //! The host supplies a SeaORM pool and exposes AuthState through Axum's FromRef.
 //! Provider tokens only live during the callback; PostgreSQL stores session hashes.
 
-pub mod bootstrap;
 pub mod config;
 pub mod cookie;
 pub mod error;

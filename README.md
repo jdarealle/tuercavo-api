@@ -1,13 +1,13 @@
 # Tuercavo API
 
-Backend REST para el catálogo de una ferretería: productos, categorías y proveedores. Autenticación OIDC con Microsoft Entra ID, sesiones en PostgreSQL y cookie opaca HttpOnly. Solo pueden iniciar sesión usuarios registrados previamente y activos; los permisos dependen de sus roles locales.
+Backend REST para el catálogo de una ferretería: productos, categorías y proveedores. Autenticación OIDC con Microsoft Entra ID, sesiones en PostgreSQL y cookie opaca HttpOnly. Entra asigna quién puede entrar y con qué App Role; la API crea su registro local al primer login válido.
 
 ## Workspace
 
 | Crate | Responsabilidad |
 | --- | --- |
 | [`api`](api/) | Ejecutable HTTP: arranque, composición de rutas, cabeceras y Scalar opcional. |
-| [`auth`](auth/) | OIDC, cookies, sesiones, extracción del usuario autenticado y comprobación de permisos. Incluye el comando de alta del primer administrador. |
+| [`auth`](auth/) | OIDC, alta local al primer login, cookies, sesiones, extracción del usuario autenticado y comprobación de permisos. |
 | [`common`](common/) | Configuración, estado compartido, errores, validación, paginación y telemetría. |
 | [`modules`](modules/) | Rutas, DTO y lógica de productos, categorías, proveedores, usuarios y salud. |
 | [`entity`](db/entity/) | Entidades de SeaORM generadas desde PostgreSQL. |
@@ -15,7 +15,7 @@ Backend REST para el catálogo de una ferretería: productos, categorías y prov
 
 ### 1. Configurar el entorno
 
-Crea `.env` a partir de [`.env.sample`](.env.sample) si todavía no existe y sustituye los valores `REEMPLAZAR_…`. La API y `bootstrap-admin` cargan este archivo automáticamente; las variables ya exportadas en el entorno tienen prioridad.
+Crea `.env` a partir de [`.env.sample`](.env.sample) si todavía no existe y sustituye los valores `REEMPLAZAR_…`. La API carga este archivo automáticamente; las variables ya exportadas en el entorno tienen prioridad.
 
 | Variable | Uso / valor predeterminado |
 | --- | --- |
@@ -76,21 +76,13 @@ Configura `ENTRA_TENANT_ID`, `ENTRA_CLIENT_ID` y `ENTRA_CLIENT_SECRET`. El secre
 
 Si configuras `POST_LOGOUT_REDIRECT_URI`, registra esa URL exacta como otra Redirect URI **Web**. Por ejemplo, `http://localhost:3000/signed-out` debe mostrar una pantalla pública de la SPA que no inicie el login automáticamente.
 
-### 5. Registrar el primer administrador
+Define los App Roles `admin`, `capturista` y `consultor` en esta misma App registration, con tipo **Users/Groups**. En la aplicación empresarial correspondiente configura **Assignment required = Yes**. La API también exige exactamente uno de esos roles en el ID Token; la asignación `Default Access` no basta. Consulta el [procedimiento técnico de alta](auth/README.md#alta-inicial-de-un-usuario) y la [documentación oficial de Microsoft](https://learn.microsoft.com/en-us/entra/identity-platform/howto-add-app-roles-in-apps).
 
-Además de `DATABASE_URL` y `ENTRA_TENANT_ID`, configura estas variables:
+### 5. Dar de alta al primer administrador y a los demás usuarios
 
-| Variable | Contenido |
-| --- | --- |
-| `ADMIN_OBJECT_ID` | Object ID del usuario dentro del tenant configurado; no es el client ID de la aplicación. |
-| `ADMIN_EMAIL` | Correo del administrador. |
-| `ADMIN_FULL_NAME` | Nombre completo del administrador. |
+En **Enterprise applications → tuercavo-api → Users and groups**, asigna el rol `admin` a la persona que administrará Tuercavo. Es la misma operación para los usuarios siguientes, eligiendo su App Role. La persona debe existir antes en el tenant.
 
-```sh
-cargo run -p auth --bin bootstrap-admin
-```
-
-El alta es explícita: no se ejecuta al iniciar la API ni durante el login. Si esa identidad ya es un administrador activo, el comando devuelve su identificador. Si existe otro administrador activo en el tenant, las siguientes altas deben realizarse mediante la API de usuarios.
+Al primer login, la API valida la asignación recibida en el ID Token y crea el registro local en PostgreSQL. Hasta ese momento la persona no aparece en `GET /api/users`. El registro local refleja un acceso ya autorizado por Entra.
 
 ### 6. Ejecutar la API y abrir Scalar
 
@@ -114,7 +106,7 @@ cargo run -p api
 
 ## Autenticación y permisos
 
-El login utiliza Authorization Code con PKCE, `state` y `nonce`. Tras validar la identidad de Entra, la API busca un usuario local activo por la combinación de tenant y Object ID. No crea usuarios automáticamente ni vincula cuentas por correo electrónico.
+El login utiliza Authorization Code con PKCE, `state` y `nonce`. Tras validar la identidad y un App Role reconocido de Entra, la API crea el usuario local en su primer ingreso o sincroniza su rol al volver a entrar. Lo identifica por tenant y Object ID; nunca vincula cuentas por correo electrónico. Un usuario local desactivado continúa bloqueado aunque conserve la asignación en Entra.
 
 La sesión se conserva en PostgreSQL y el navegador recibe una cookie `HttpOnly`, `SameSite=Lax`, con ruta `/`. Con HTTPS se utiliza `Secure` y el prefijo `__Host-`. HTTP solo se admite para desarrollo en una dirección local de loopback. Los tokens del proveedor no se guardan en la sesión.
 
@@ -126,7 +118,7 @@ Las peticiones autenticadas de escritura requieren un encabezado `Origin` que co
 | `capturista` | Consulta, creación y actualización del catálogo. |
 | `consultor` | Consulta del catálogo. |
 
-Los permisos se consultan en cada petición autenticada, por lo que un cambio de rol se aplica en la siguiente petición. Desactivar un usuario revoca sus sesiones. La administración impide desactivar o degradar al último administrador activo de un tenant.
+Los permisos se consultan en cada petición autenticada. Un cambio de App Role en Entra se refleja localmente al siguiente login, no en una sesión ya abierta. Desactivar un usuario desde la API revoca sus sesiones locales; la sincronización de bajas hechas solo en Entra queda pendiente de un diseño separado. La administración local impide desactivar al último administrador activo de un tenant.
 
 `POST /api/auth/logout` revoca la sesión local y elimina la cookie. Para cerrar también la sesión de Microsoft, la SPA debe esperar el `204` y después navegar con `window.location.assign('/api/auth/entra-logout')`. Esta ruta redirige el navegador al `end_session_endpoint` descubierto en Entra. Tras la salida, Entra redirige a `POST_LOGOUT_REDIRECT_URI` si está configurada; en caso contrario muestra su propia pantalla. Una llamada `fetch` a la ruta de Entra no sustituye la navegación del navegador.
 
@@ -145,9 +137,8 @@ Los intentos de login pendientes permanecen en memoria durante cinco minutos. Re
 | `GET` | `/api/auth/entra-logout` | Redirigir el navegador al cierre de sesión de Entra después del logout local. |
 | `GET`, `POST` | `/api/products`, `/api/categories`, `/api/suppliers` | Listar o crear registros. |
 | `GET`, `PATCH`, `DELETE` | `/api/products/{public_id}`, `/api/categories/{public_id}`, `/api/suppliers/{public_id}` | Consultar, actualizar o eliminar un registro. |
-| `GET`, `POST` | `/api/users` | Listar o registrar usuarios previamente autorizados. |
-| `GET`, `PATCH` | `/api/users/{public_id}` | Consultar o actualizar un usuario. |
-| `PUT` | `/api/users/{public_id}/role` | Asignar un rol. |
+| `GET` | `/api/users` | Listar usuarios que ya iniciaron sesión por primera vez. |
+| `GET`, `PATCH` | `/api/users/{public_id}` | Consultar un usuario o cambiar su estado local `is_active`. |
 | `GET` | `/api/roles`, `/api/permissions` | Consultar roles y permisos disponibles. |
 | `GET` | `/api/health/live` | Comprobar que el servidor responde. |
 | `GET` | `/api/health/ready` | Comprobar la conexión a PostgreSQL. |

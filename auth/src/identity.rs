@@ -12,8 +12,8 @@ pub struct Principal {
     #[schema(ignore)]
     pub user_id: i64,
     pub public_id: Uuid,
-    pub email: String,
-    pub full_name: String,
+    pub email: Option<String>,
+    pub full_name: Option<String>,
     pub tenant_id: Uuid,
     pub object_id: Uuid,
     pub role: String,

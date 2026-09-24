@@ -9,13 +9,10 @@ publish.workspace = true
 axum.workspace = true
 axum-extra.workspace = true
 chrono.workspace = true
-dotenvy.workspace = true
-email_address.workspace = true
 entity = { path = "../db/entity" }
 openidconnect.workspace = true
 sea-orm.workspace = true
 serde.workspace = true
-tokio.workspace = true
 tracing.workspace = true
 utoipa.workspace = true
 utoipa-axum.workspace = true
