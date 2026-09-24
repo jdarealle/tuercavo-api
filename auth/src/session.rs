@@ -3,8 +3,8 @@ use entity::{roles, sessions, users};
 use sea_orm::{
     ActiveModelTrait,
     ActiveValue::Set,
-    ColumnTrait, ConnectionTrait, DatabaseConnection, DbErr, EntityTrait, QueryFilter, QuerySelect,
-    TransactionTrait,
+    ColumnTrait, ConnectionTrait, DatabaseConnection, DbErr, EntityTrait, IsolationLevel,
+    QueryFilter, QuerySelect, TransactionTrait,
     entity::prelude::DateTimeWithTimeZone,
     sea_query::{Alias, Expr, ExprTrait, Func, OnConflict, Query},
 };
@@ -48,9 +48,14 @@ impl SessionStore {
         if identity.tenant_id != self.tenant_id || identity.issuer != self.issuer {
             return Err(AuthError::Forbidden);
         }
-        let tx = self.db.begin().await?;
+        let tx = self
+            .db
+            .begin_with_config(Some(IsolationLevel::ReadCommitted), None)
+            .await?;
+        crate::authorization::login_lock(&tx).await?;
         let role = roles::Entity::find()
-            .filter(roles::Column::Code.eq(&identity.role))
+            .filter(roles::Column::Code.eq(crate::authorization::DEFAULT_ROLE))
+            .filter(roles::Column::IsActive.eq(true))
             .one(&tx)
             .await?
             .ok_or(AuthError::Forbidden)?;
@@ -85,9 +90,8 @@ impl SessionStore {
         if !user.is_active {
             return Err(AuthError::Forbidden);
         }
-        if user.role_id != role.id || user.full_name != identity.full_name {
+        if user.full_name != identity.full_name {
             let mut update: users::ActiveModel = user.clone().into();
-            update.role_id = Set(role.id);
             update.full_name = Set(identity.full_name.clone());
             update.updated_at = Set(now);
             update.update(&tx).await?;
@@ -211,6 +215,96 @@ mod tests {
     use std::collections::BTreeMap;
 
     #[tokio::test]
+    async fn a_new_login_preserves_custom_role_while_refreshing_display_name() {
+        let tenant = Uuid::from_u128(1);
+        let object = Uuid::from_u128(2);
+        let now = chrono::Utc::now().fixed_offset();
+        let mut user = users::Model {
+            id: 1,
+            public_id: Uuid::from_u128(3),
+            role_id: 7,
+            entra_tenant_id: tenant,
+            entra_object_id: object,
+            email: None,
+            full_name: Some("Old name".into()),
+            is_active: true,
+            created_at: now,
+            updated_at: now,
+        };
+        let previous = user.clone();
+        user.full_name = Some("New name".into());
+        let session = sessions::Model {
+            session_id_hash: vec![1; 32],
+            user_id: user.id,
+            issuer: "https://issuer.example.test".into(),
+            subject: "subject".into(),
+            tenant_id: tenant,
+            created_at: now,
+            last_seen_at: now,
+            expires_at: now + Duration::seconds(3600),
+            revoked_at: None,
+        };
+        let db = MockDatabase::new(DbBackend::Postgres)
+            .append_query_results([
+                vec![
+                    roles::Model {
+                        id: 1,
+                        code: "admin".into(),
+                        name: "Admin".into(),
+                        is_active: true,
+                    }
+                    .into_mock_row(),
+                ],
+                vec![
+                    roles::Model {
+                        id: 3,
+                        code: "consultor".into(),
+                        name: "Consultor".into(),
+                        is_active: true,
+                    }
+                    .into_mock_row(),
+                ],
+                vec![BTreeMap::from([("db_now", now.into())]).into_mock_row()],
+                vec![], // Existing user: ON CONFLICT DO NOTHING.
+                vec![previous.into_mock_row()],
+                vec![user.into_mock_row()],
+                vec![session.into_mock_row()],
+            ])
+            .into_connection();
+        let store = SessionStore {
+            db: db.clone(),
+            tenant_id: tenant,
+            issuer: "https://issuer.example.test".into(),
+            absolute_ttl: 3600,
+            idle_ttl: 900,
+        };
+        let identity = VerifiedIdentity {
+            issuer: store.issuer.clone(),
+            subject: "subject".into(),
+            tenant_id: tenant,
+            object_id: object,
+            full_name: Some("New name".into()),
+        };
+        store.replace(None, &[1; 32], &identity).await.unwrap();
+        let log = db.into_transaction_log();
+        let update = log[0]
+            .statements()
+            .iter()
+            .find(|q| q.sql.starts_with("UPDATE \"users\""))
+            .unwrap();
+        let set = update.sql.split(" WHERE ").next().unwrap();
+        assert!(set.contains("\"full_name\" ="));
+        assert!(!set.contains("\"role_id\" ="));
+        assert!(
+            log[0]
+                .statements()
+                .iter()
+                .any(|q| q.sql.contains("FOR SHARE"))
+        );
+        assert_eq!(log[0].statements().last().unwrap().sql, "COMMIT");
+    }
+
+    #[tokio::test]
     async fn inactive_user_cannot_create_a_new_session() {
         let tenant = Uuid::from_u128(1);
         let object = Uuid::from_u128(2);
@@ -222,6 +316,16 @@ mod tests {
                         id: 1,
                         code: "admin".into(),
                         name: "Administrador".into(),
+                        is_active: true,
+                    }
+                    .into_mock_row(),
+                ],
+                vec![
+                    roles::Model {
+                        id: 1,
+                        code: "admin".into(),
+                        name: "Administrador".into(),
+                        is_active: true,
                     }
                     .into_mock_row(),
                 ],
@@ -256,7 +360,6 @@ mod tests {
             subject: "subject".into(),
             tenant_id: tenant,
             object_id: object,
-            role: "admin".into(),
             full_name: None,
         };
 

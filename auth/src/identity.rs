@@ -37,6 +37,7 @@ pub async fn load_user<C: ConnectionTrait>(db: &C, id: i64) -> Result<Principal,
         .await?
         .ok_or(AuthError::Forbidden)?;
     let role = roles::Entity::find_by_id(user.role_id)
+        .filter(roles::Column::IsActive.eq(true))
         .one(db)
         .await?
         .ok_or(AuthError::Forbidden)?;

@@ -10,8 +10,6 @@ struct EntraClaims {
     tid: Uuid,
     oid: Uuid,
     #[serde(default)]
-    roles: Vec<String>,
-    #[serde(default)]
     nbf: Option<i64>,
 }
 impl AdditionalClaims for EntraClaims {}
@@ -59,15 +57,7 @@ pub(crate) struct VerifiedIdentity {
     pub subject: String,
     pub tenant_id: Uuid,
     pub object_id: Uuid,
-    pub role: String,
     pub full_name: Option<String>,
-}
-
-fn assigned_role(roles: &[String]) -> Result<&str, AuthError> {
-    match roles {
-        [role] if matches!(role.as_str(), "admin" | "capturista" | "consultor") => Ok(role),
-        _ => Err(AuthError::Forbidden),
-    }
 }
 
 fn display_name(value: Option<&str>) -> Option<String> {
@@ -196,7 +186,6 @@ impl OidcProvider {
         if subject.is_empty() || subject.chars().count() > 255 || issuer.chars().count() > 512 {
             return Err(AuthError::Provider);
         }
-        let role = assigned_role(&extra.roles)?.to_owned();
         let full_name = display_name(
             claims
                 .name()
@@ -209,7 +198,6 @@ impl OidcProvider {
             subject: subject.into(),
             tenant_id: extra.tid,
             object_id: extra.oid,
-            role,
             full_name,
         })
     }
@@ -217,21 +205,16 @@ impl OidcProvider {
 
 #[cfg(test)]
 mod tests {
-    use super::assigned_role;
+    use super::EntraClaims;
 
     #[test]
-    fn only_one_known_app_role_authorizes_login() {
-        for role in ["admin", "capturista", "consultor"] {
-            assert_eq!(assigned_role(&[role.to_owned()]).unwrap(), role);
-        }
-        for roles in [
-            vec![],
-            vec!["Default Access".to_owned()],
-            vec!["Admin".to_owned()],
-            vec!["admin".to_owned(), "consultor".to_owned()],
-            vec!["admin".to_owned(), "unexpected".to_owned()],
-        ] {
-            assert!(assigned_role(&roles).is_err());
-        }
+    fn identity_claims_do_not_require_or_interpret_app_roles() {
+        let mut value = serde_json::json!({
+            "tid": "00000000-0000-0000-0000-000000000001",
+            "oid": "00000000-0000-0000-0000-000000000002"
+        });
+        assert!(serde_json::from_value::<EntraClaims>(value.clone()).is_ok());
+        value["roles"] = serde_json::json!(["admin", "unknown"]);
+        assert!(serde_json::from_value::<EntraClaims>(value).is_ok());
     }
 }

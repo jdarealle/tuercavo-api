@@ -10,9 +10,11 @@ impl MigrationTrait for Migration {
             .col(ColumnDef::new(Roles::Id).small_integer().extra("GENERATED ALWAYS AS IDENTITY"))
             .col(ColumnDef::new(Roles::Code).string_len(32).not_null())
             .col(ColumnDef::new(Roles::Name).string_len(80).not_null())
+            .col(ColumnDef::new(Roles::IsActive).boolean().not_null().default(true))
             .primary_key(Index::create().name("pk_roles").col(Roles::Id))
             .index(Index::create().name("uq_roles_code").unique().col(Roles::Code))
-            .check(("ck_roles_code", Expr::cust(r#"code IN ('admin', 'capturista', 'consultor')"#)))
+            .check(("ck_roles_code", Expr::cust(r#"code ~ '^[a-z][a-z0-9_]{0,31}$'"#)))
+            .check(("ck_roles_system_active", Expr::cust("code NOT IN ('admin', 'consultor') OR is_active")))
             .check(("ck_roles_name", Expr::cust(r#"char_length(name) BETWEEN 1 AND 80 AND name = btrim(name) AND name !~ '[[:cntrl:]]'"#)))
             .to_owned()).await?;
         manager.create_table(Table::create().table(Permissions::Table)
@@ -99,4 +101,5 @@ enum Roles {
     Id,
     Code,
     Name,
+    IsActive,
 }

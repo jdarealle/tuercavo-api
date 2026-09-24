@@ -1,5 +1,5 @@
 [package]
-name = "modules"
+name = "bootstrap-admin"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -7,13 +7,9 @@ publish.workspace = true
 
 [dependencies]
 auth = { path = "../auth" }
-axum.workspace = true
-sea-orm.workspace = true
-serde.workspace = true
-utoipa.workspace = true
-utoipa-axum.workspace = true
-uuid.workspace = true
 chrono.workspace = true
+dotenvy.workspace = true
 entity = { path = "../db/entity" }
-common = { path = "../common" }
+sea-orm.workspace = true
 tokio.workspace = true
+uuid.workspace = true

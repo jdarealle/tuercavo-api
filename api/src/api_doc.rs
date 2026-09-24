@@ -15,7 +15,7 @@ use utoipa::openapi::{
 pub fn router(mut spec: OpenApi, cookie_name: &str) -> Router<AppState> {
     spec.info.title = "Tuercavo API".into();
     spec.info.version = env!("CARGO_PKG_VERSION").into();
-    spec.info.description = Some("Catálogo con roles asignados en Microsoft Entra y permisos locales. Abre /api/auth/login en este mismo origen para iniciar sesión. El navegador envía la cookie HttpOnly automáticamente; las escrituras requieren Origin del mismo origen. PATCH conserva los campos omitidos.".into());
+    spec.info.description = Some("Catálogo con autenticación Microsoft Entra y roles y permisos administrados en Tuercavo. Abre /api/auth/login en este mismo origen para iniciar sesión. El navegador envía la cookie HttpOnly automáticamente; las escrituras requieren Origin del mismo origen. PATCH conserva los campos omitidos.".into());
     spec.components
         .get_or_insert_with(Default::default)
         .add_security_scheme(

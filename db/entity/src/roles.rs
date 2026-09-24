@@ -11,6 +11,7 @@ pub struct Model {
     #[sea_orm(unique)]
     pub code: String,
     pub name: String,
+    pub is_active: bool,
     #[sea_orm(has_many)]
     pub users: HasMany<super::users::Entity>,
     #[sea_orm(has_many, via = "role_permissions")]

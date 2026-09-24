@@ -3,7 +3,7 @@ use auth::{AuthErrorResponse, Permission, Require};
 use axum::{Json, extract::State};
 use common::{
     error::{AppError, ErrorResponse},
-    http::{Path, Query},
+    http::{Json as Input, Path, Query},
     pagination::{Page, Pagination},
     state::AppState,
 };
@@ -17,13 +17,9 @@ pub struct Update;
 impl Permission for Update {
     const CODE: &'static str = "users.update";
 }
-pub struct ReadRoles;
-impl Permission for ReadRoles {
-    const CODE: &'static str = "roles.read";
-}
-pub struct ReadPermissions;
-impl Permission for ReadPermissions {
-    const CODE: &'static str = "permissions.read";
+pub struct Assign;
+impl Permission for Assign {
+    const CODE: &'static str = "users.assign_role";
 }
 
 #[utoipa::path(get, path = "/users", tag = "users", operation_id = "list_users", params(Pagination), responses(
@@ -40,7 +36,7 @@ pub async fn list(
 }
 
 #[utoipa::path(get, path = "/users/{public_id}", tag = "users", operation_id = "get_user", params(("public_id" = Uuid, Path)), responses(
-    (status = 200, body = UserResponse), (status = 400, body = ErrorResponse), (status = 404, body = ErrorResponse),
+    (status = 200, body = UserResponse), (status = 400, body = ErrorResponse), (status = 404, body = ErrorResponse), (status = 409, body = ErrorResponse),
     (status = 401, body = AuthErrorResponse), (status = 403, body = AuthErrorResponse), (status = 503, body = AuthErrorResponse)), security(("session" = [])))]
 pub async fn get(
     _actor: Require<Read>,
@@ -53,7 +49,7 @@ pub async fn get(
 }
 
 #[utoipa::path(post, path = "/users/{public_id}/deactivate", tag = "users", operation_id = "deactivate_user", description = "Desactiva el acceso local y revoca todas las sesiones del usuario en una transacción. Su asignación en Entra se retira por separado.", params(("public_id" = Uuid, Path)), responses(
-    (status = 200, body = UserResponse, description = "Usuario desactivado y sesiones revocadas"), (status = 400, body = ErrorResponse), (status = 404, body = ErrorResponse),
+    (status = 200, body = UserResponse, description = "Usuario desactivado y sesiones revocadas"), (status = 400, body = ErrorResponse), (status = 404, body = ErrorResponse), (status = 409, body = ErrorResponse),
     (status = 401, body = AuthErrorResponse), (status = 403, body = AuthErrorResponse), (status = 503, body = AuthErrorResponse)), security(("session" = [])))]
 pub async fn deactivate(
     actor: Require<Update>,
@@ -66,7 +62,7 @@ pub async fn deactivate(
 }
 
 #[utoipa::path(post, path = "/users/{public_id}/reactivate", tag = "users", operation_id = "reactivate_user", description = "Retira el bloqueo local sin restaurar sesiones. La asignación en Entra debe estar vigente y el usuario debe iniciar sesión de nuevo.", params(("public_id" = Uuid, Path)), responses(
-    (status = 200, body = UserResponse, description = "Bloqueo local retirado; requiere un nuevo login"), (status = 400, body = ErrorResponse), (status = 404, body = ErrorResponse),
+    (status = 200, body = UserResponse, description = "Bloqueo local retirado; requiere un nuevo login"), (status = 400, body = ErrorResponse), (status = 404, body = ErrorResponse), (status = 409, body = ErrorResponse),
     (status = 401, body = AuthErrorResponse), (status = 403, body = AuthErrorResponse), (status = 503, body = AuthErrorResponse)), security(("session" = [])))]
 pub async fn reactivate(
     actor: Require<Update>,
@@ -78,22 +74,27 @@ pub async fn reactivate(
     ))
 }
 
-#[utoipa::path(get, path = "/roles", tag = "users", operation_id = "list_roles", responses(
-    (status = 200, body = Vec<RoleResponse>), (status = 401, body = AuthErrorResponse),
-    (status = 403, body = AuthErrorResponse), (status = 503, body = AuthErrorResponse)), security(("session" = [])))]
-pub async fn roles(
-    _actor: Require<ReadRoles>,
+#[utoipa::path(put, path = "/users/{public_id}/role", tag = "users", operation_id = "assign_user_role",
+    description = "Asigna un rol local activo y revoca las sesiones si cambia. Protege al último administrador activo.",
+    params(("public_id" = Uuid, Path)), request_body = AssignRole,
+    responses((status = 200, body = UserResponse), (status = 400, body = ErrorResponse),
+        (status = 404, body = ErrorResponse), (status = 409, body = ErrorResponse),
+        (status = 401, body = AuthErrorResponse), (status = 403, body = AuthErrorResponse), (status = 503, body = AuthErrorResponse)),
+    security(("session" = [])))]
+pub async fn assign_role(
+    actor: Require<Assign>,
     State(state): State<AppState>,
-) -> Result<Json<Vec<RoleResponse>>, AppError> {
-    Ok(Json(service::roles(&state.db).await?))
-}
-
-#[utoipa::path(get, path = "/permissions", tag = "users", operation_id = "list_permissions", responses(
-    (status = 200, body = Vec<PermissionResponse>), (status = 401, body = AuthErrorResponse),
-    (status = 403, body = AuthErrorResponse), (status = 503, body = AuthErrorResponse)), security(("session" = [])))]
-pub async fn permissions(
-    _actor: Require<ReadPermissions>,
-    State(state): State<AppState>,
-) -> Result<Json<Vec<PermissionResponse>>, AppError> {
-    Ok(Json(service::permissions(&state.db).await?))
+    Path(id): Path<Uuid>,
+    Input(body): Input<AssignRole>,
+) -> Result<Json<UserResponse>, AppError> {
+    Ok(Json(
+        service::assign_role(
+            &state.db,
+            actor.0.user_id,
+            state.auth.tenant_id(),
+            id,
+            &body.role,
+        )
+        .await?,
+    ))
 }

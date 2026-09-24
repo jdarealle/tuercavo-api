@@ -16,6 +16,7 @@ pub fn api_routes() -> OpenApiRouter<AppState> {
         .merge(modules::supplier::router())
         .merge(modules::product::router())
         .merge(modules::users::router())
+        .merge(modules::roles::router())
         .merge(auth::router())
         .merge(modules::health::router());
     OpenApiRouter::new().nest("/api", api)
@@ -57,4 +58,19 @@ async fn request_context(mut req: Request, next: Next) -> Response {
         tracing::info!(request_id = %id, %method, %route, status = response.status().as_u16(), elapsed_ms = start.elapsed().as_millis(), "request completed");
         response
     }).await
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn authorization_routes_are_mounted_and_documented() {
+        let (_, document) = super::api_routes().split_for_parts();
+        let paths = &document.paths.paths;
+        assert!(paths["/api/roles"].get.is_some());
+        assert!(paths["/api/roles"].post.is_some());
+        assert!(paths["/api/roles/{code}"].patch.is_some());
+        assert!(paths["/api/roles/{code}/permissions"].put.is_some());
+        assert!(paths["/api/users/{public_id}/role"].put.is_some());
+        assert!(paths["/api/permissions"].get.is_some());
+    }
 }

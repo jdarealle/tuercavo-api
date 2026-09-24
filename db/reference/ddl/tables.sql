@@ -11,14 +11,16 @@
 
 CREATE TYPE catalog_status AS ENUM ('active', 'inactive', 'archived');
 
--- Roles locales fijos; cada login válido sincroniza el rol asignado en Entra.
+-- Roles locales administrables; admin y consultor son roles protegidos del sistema.
 CREATE TABLE roles (
     id SMALLINT GENERATED ALWAYS AS IDENTITY,
     code VARCHAR(32) NOT NULL,
     name VARCHAR(80) NOT NULL,
+    is_active BOOLEAN NOT NULL DEFAULT true,
     CONSTRAINT pk_roles PRIMARY KEY (id),
     CONSTRAINT uq_roles_code UNIQUE (code),
-    CONSTRAINT ck_roles_code CHECK (code IN ('admin', 'capturista', 'consultor')),
+    CONSTRAINT ck_roles_code CHECK (code ~ '^[a-z][a-z0-9_]{0,31}$'),
+    CONSTRAINT ck_roles_system_active CHECK (code NOT IN ('admin', 'consultor') OR is_active),
     CONSTRAINT ck_roles_name CHECK (char_length(name) BETWEEN 1 AND 80 AND name = btrim(name) AND name !~ '[[:cntrl:]]')
 );
 
@@ -186,7 +188,11 @@ INSERT INTO permissions (code, description) VALUES
     ('users.read', 'Consultar usuarios'),
     ('users.update', 'Editar y desactivar usuarios'),
     ('roles.read', 'Consultar roles'),
-    ('permissions.read', 'Consultar permisos');
+    ('permissions.read', 'Consultar permisos'),
+    ('users.assign_role', 'Asignar roles a usuarios'),
+    ('roles.create', 'Crear roles'),
+    ('roles.update', 'Editar y retirar roles'),
+    ('roles.assign_permissions', 'Asignar permisos a roles');
 
 INSERT INTO role_permissions (role_id, permission_id)
 SELECT r.id, p.id

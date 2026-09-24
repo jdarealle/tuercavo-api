@@ -1,5 +1,5 @@
 [workspace]
-members = ["api", "auth", "common", "modules", "db/migration", "db/entity"]
+members = ["api", "auth", "bootstrap-admin", "common", "modules", "db/migration", "db/entity"]
 resolver = "3"
 
 [workspace.package]

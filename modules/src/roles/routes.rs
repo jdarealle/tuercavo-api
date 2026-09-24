@@ -6,7 +6,8 @@ pub fn router() -> OpenApiRouter<AppState> {
     OpenApiRouter::new()
         .routes(routes!(handler::list))
         .routes(routes!(handler::get))
-        .routes(routes!(handler::deactivate))
-        .routes(routes!(handler::reactivate))
-        .routes(routes!(handler::assign_role))
+        .routes(routes!(handler::permissions))
+        .routes(routes!(handler::create))
+        .routes(routes!(handler::update))
+        .routes(routes!(handler::set_permissions))
 }

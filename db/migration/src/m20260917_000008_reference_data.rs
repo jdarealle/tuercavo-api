@@ -9,7 +9,7 @@ const ROLES: [(&str, &str); 3] = [
     ("consultor", "Consultor"),
 ];
 
-const PERMISSIONS: [(&str, &str); 16] = [
+const PERMISSIONS: [(&str, &str); 20] = [
     ("products.read", "Consultar productos"),
     ("products.create", "Crear productos"),
     ("products.update", "Editar productos"),
@@ -26,6 +26,10 @@ const PERMISSIONS: [(&str, &str); 16] = [
     ("users.update", "Editar y desactivar usuarios"),
     ("roles.read", "Consultar roles"),
     ("permissions.read", "Consultar permisos"),
+    ("users.assign_role", "Asignar roles a usuarios"),
+    ("roles.create", "Crear roles"),
+    ("roles.update", "Editar y retirar roles"),
+    ("roles.assign_permissions", "Asignar permisos a roles"),
 ];
 
 const CAPTURISTA: [&str; 9] = [

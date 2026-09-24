@@ -1,5 +1,5 @@
 use chrono::{DateTime, FixedOffset};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 use uuid::Uuid;
 
@@ -16,14 +16,8 @@ pub struct UserResponse {
     pub updated_at: DateTime<FixedOffset>,
 }
 
-#[derive(Serialize, ToSchema)]
-pub struct RoleResponse {
-    pub code: String,
-    pub name: String,
-}
-
-#[derive(Serialize, ToSchema)]
-pub struct PermissionResponse {
-    pub code: String,
-    pub description: String,
+#[derive(Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct AssignRole {
+    pub role: String,
 }

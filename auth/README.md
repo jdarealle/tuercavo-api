@@ -19,7 +19,7 @@ api::main
                          └─ extractors → session → identity → roles y permisos
 ```
 
-`common/src/state.rs` implementa `FromRef<AppState> for AuthState`. Por ello los handlers de `auth` y los extractores de `modules` pueden obtener el estado de autenticación del estado compartido de Axum. `api/src/main.rs` crea el pool y hace el descubrimiento OIDC al arrancar; también ejecuta cada 300 segundos `AuthState::cleanup()` para limpiar sesiones caducadas, inactivas o revocadas, así como flujos de login vencidos. `api/src/app.rs` monta las rutas bajo `/api`. `modules` consulta usuarios y conserva el control local `is_active`; la asignación de roles se administra en Entra.
+`common/src/state.rs` implementa `FromRef<AppState> for AuthState`. Por ello los handlers de `auth` y los extractores de `modules` pueden obtener el estado de autenticación del estado compartido de Axum. `api/src/main.rs` crea el pool y hace el descubrimiento OIDC al arrancar; también ejecuta cada 300 segundos `AuthState::cleanup()` para limpiar sesiones caducadas, inactivas o revocadas, así como flujos de login vencidos. `api/src/app.rs` monta las rutas bajo `/api`. `modules` administra usuarios, roles y permisos locales; conserva el control `is_active` y ejecuta las mutaciones mediante el protocolo transaccional de `authorization`.
 
 ## Archivos y responsabilidades
 
@@ -28,13 +28,14 @@ api::main
 | [`src/lib.rs`](src/lib.rs) | Declara los módulos y la interfaz pública: configuración, estado, router, extractores, identidad, errores, tokens y sesiones. |
 | [`src/config.rs`](src/config.rs) | Lee y valida la configuración OIDC, los destinos de redirección y las duraciones de sesión. Construye el issuer y el origen público esperados. |
 | [`src/state.rs`](src/state.rs) | Construye `AuthState` con el proveedor, el almacén de sesiones, la política de cookies y los flujos de login pendientes. Gestiona su caducidad y limpieza. |
-| [`src/oidc.rs`](src/oidc.rs) | Descubre los metadatos de Entra, genera solicitudes de autorización, canjea códigos, valida ID Tokens y exige un único App Role reconocido. Entrega identidad, rol y nombre de presentación mediante `VerifiedIdentity`. |
+| [`src/oidc.rs`](src/oidc.rs) | Descubre los metadatos de Entra, genera solicitudes de autorización, canjea códigos, valida ID Tokens. Entrega identidad y nombre de presentación mediante `VerifiedIdentity`. |
 | [`src/routes.rs`](src/routes.rs) | Define los handlers HTTP de login, callback, sesión actual y los dos tipos de logout; coordina OIDC, cookies y sesiones. También registra sus operaciones en OpenAPI. |
 | [`src/cookie.rs`](src/cookie.rs) | Define nombres, atributos, duración y eliminación de las cookies de sesión y correlación del login. |
 | [`src/token.rs`](src/token.rs) | Genera identificadores opacos de 32 bytes, los codifica en Base64url y calcula el hash SHA-256 que se almacena en PostgreSQL. Valida el formato de una cookie recibida. |
-| [`src/session.rs`](src/session.rs) | Da de alta al usuario en su primer login, actualiza su rol local según Entra y crea, sustituye, autentica, revoca y limpia sesiones persistentes; expone `revoke_user` para la desactivación administrativa. |
+| [`src/session.rs`](src/session.rs) | Da de alta al usuario en su primer login, lo registra como consultor, conserva su rol en logins posteriores y crea, sustituye, autentica, revoca y limpia sesiones persistentes; expone `revoke_user` para la desactivación administrativa. |
 | [`src/identity.rs`](src/identity.rs) | Carga al usuario activo y sus permisos actuales desde las entidades; define `Principal`, el resultado de `/api/auth/me` y de los extractores. |
 | [`src/extractor.rs`](src/extractor.rs) | Implementa `AuthUser`, `Require<P>` y `SameOrigin` como extractores Axum para autenticación, autorización y control de origen. |
+| [`src/authorization.rs`](src/authorization.rs) | Define los roles protegidos, valida sus permisos y coordina bloqueos transaccionales. |
 | [`src/error.rs`](src/error.rs) | Convierte errores de autenticación en respuestas HTTP JSON sin exponer detalles de la base de datos ni del proveedor. |
 
 ## Arranque y configuración
@@ -58,21 +59,51 @@ La URL de `OIDC_REDIRECT_URI` es la dirección **visible para el navegador**. Si
 
 ## Alta inicial de un usuario
 
-1. **Responsable de Entra:** comprueba que la persona tenga una cuenta en el tenant configurado. En **App registrations → tuercavo-api → App roles**, define `admin`, `capturista` y `consultor` como roles de tipo **Users/Groups**, con esos valores exactos. Los App Roles pertenecen a la misma aplicación registrada que usa el backend como cliente OIDC; los roles asignados a otra App registration no aparecerán en este ID Token.
-2. **Responsable de Entra:** en **Enterprise applications → tuercavo-api → Properties**, configura **Assignment required = Yes**. Después, en **Users and groups**, asigna a la persona **exactamente uno** de los tres roles. Para el primer administrador, asigna `admin`. La asignación `Default Access` no concede un rol de Tuercavo.
-3. **Persona usuaria:** navega a `GET /api/auth/login` y se autentica en Entra. Entra devuelve al callback de la API un ID Token con `tid`, `oid` y el App Role en `roles`.
-4. **`auth`:** valida el ID Token y exige un único rol reconocido. En una transacción PostgreSQL crea el usuario local si es su primer login, sincroniza su rol y nombre de presentación, y crea la sesión. Deniega el acceso si el usuario local está desactivado. `created_at` registra el primer login exitoso.
-5. **SPA:** recibe la redirección y consulta `GET /api/auth/me`. El usuario aparece en la lista local después de completar su primer login.
+1. **Responsable de Entra:** registra la aplicación como cliente OIDC confidencial del tenant, con callback Web y credencial de cliente. Configura **Enterprise applications → tuercavo-api → Properties → Assignment required = Yes**.
+2. **Responsable de Entra:** abre **Users and groups → Add user/group**, selecciona a la persona y asigna **Default Access**. La aplicación se configura sin App Roles de negocio.
+3. **Persona usuaria:** navega a `GET /api/auth/login` y se autentica en Entra. El backend canjea el código y valida el ID Token.
+4. **`auth`:** busca la identidad por `(entra_tenant_id, entra_object_id)`. En una transacción crea el usuario como `consultor` si no existe, exige que esté activo, actualiza el nombre de presentación y crea la sesión. Los logins posteriores conservan el rol local. La restricción única de identidad evita duplicados ante logins concurrentes.
+5. **SPA:** recibe la cookie opaca y consulta `GET /api/auth/me`. El usuario aparece en la lista local después de su primer login; `created_at` registra ese momento.
+6. **Administrador de Tuercavo:** asigna otro rol cuando corresponda mediante `PUT /api/users/{public_id}/role`.
 
-El App Role es la fuente de la asignación; `role_id` local permite reutilizar los permisos existentes. Se sincroniza en cada nuevo login. Una sesión abierta sigue leyendo el rol local, por lo que un cambio hecho solo en Entra aún no modifica esa sesión. El campo local `email` permanece nulo: la claim de Entra no garantiza una dirección de contacto válida. Microsoft documenta los [App Roles y la claim `roles`](https://learn.microsoft.com/en-us/entra/identity-platform/howto-add-app-roles-in-apps), la [asignación a usuarios](https://learn.microsoft.com/en-us/entra/identity/enterprise-apps/assign-user-or-group-access-portal), la [excepción de administradores globales a Assignment required](https://learn.microsoft.com/en-us/entra/identity/enterprise-apps/application-properties), la [identificación estable mediante `tid` y `oid`](https://learn.microsoft.com/en-us/entra/identity-platform/claims-validation) y las [limitaciones de `email` y `name` en el ID Token](https://learn.microsoft.com/en-us/entra/identity-platform/id-token-claims-reference).
+El campo `email` permanece nulo al crear el usuario: el claim de Entra no garantiza una dirección de contacto válida. Las identidades nunca se vinculan por correo. Microsoft documenta la [asignación a usuarios](https://learn.microsoft.com/en-us/entra/identity/enterprise-apps/assign-user-or-group-access-portal) y los [identificadores y metadatos del ID Token](https://learn.microsoft.com/en-us/entra/identity-platform/id-token-claims-reference).
+
+## Administración de roles y permisos
+
+`roles`, `permissions` y `role_permissions` almacenan el RBAC local. Un usuario tiene un solo rol; los endpoints verifican códigos de permiso mediante `Require<P>`. Las migraciones cargan `admin`, `capturista`, `consultor` y la matriz inicial. Los roles personalizados se crean activos y sin permisos. Sus códigos son estables y únicos, de hasta 32 caracteres, con formato `[a-z][a-z0-9_]*`.
+
+| Operación | Permiso |
+| --- | --- |
+| Listar/consultar usuarios | `users.read` |
+| Desactivar/reactivar usuarios | `users.update` |
+| Asignar un rol | `users.assign_role` |
+| Listar/consultar roles | `roles.read` |
+| Crear roles | `roles.create` |
+| Renombrar, retirar o reactivar roles | `roles.update` |
+| Reemplazar permisos de un rol | `roles.assign_permissions` |
+| Consultar el catálogo de permisos | `permissions.read` |
+
+`admin` conserva todos los permisos administrativos de esta tabla, aunque sus permisos de catálogo pueden cambiar. `consultor`, el rol predeterminado, solo admite `products.read`, `categories.read` y `suppliers.read`; puede tener un subconjunto, incluso vacío. Ambos roles son del sistema y permanecen activos. Los roles personalizados pueden recibir permisos del catálogo; delegar `users.assign_role` o `roles.assign_permissions` permite conceder privilegios elevados y debe tratarse como capacidad administrativa.
+
+`PUT /api/roles/{code}/permissions` reemplaza la lista completa y rechaza códigos desconocidos o repetidos. Los códigos del catálogo representan operaciones implementadas en Rust; su incorporación se versiona con el backend. Las migraciones futuras deben respetar las asignaciones personalizadas.
+
+`PATCH /api/roles/{code}` modifica `name` o `is_active`; retirar un rol exige que ningún usuario lo tenga asignado, incluidos los inactivos. La API conserva el rol y permite reactivarlo. `PUT /api/users/{public_id}/role` exige un rol activo y revoca las sesiones cuando hay un cambio.
+
+## Transacciones y concurrencia
+
+Las transacciones de login, administración y bootstrap usan explícitamente `READ COMMITTED`, para que las comprobaciones posteriores a esperar un bloqueo lean el estado confirmado más reciente. Todas las mutaciones administrativas toman primero un bloqueo exclusivo sobre la fila del rol de sistema `admin`, antes de consultar de nuevo los permisos del actor y bloquear usuarios. Este orden serializa los cambios entre réplicas y evita que dos administradores eliminen simultáneamente al último administrador activo. Desactivar o cambiar de rol a un administrador exige que permanezca otro usuario activo con rol `admin` dentro del tenant.
+
+El callback adquiere un bloqueo compartido sobre esa misma fila antes de insertar/bloquear el usuario y crear su sesión. Los logins pueden ejecutarse en paralelo entre sí, pero no pueden crear sesiones mientras una mutación administrativa revoca las sesiones afectadas. Los bloqueos se liberan al confirmar o revertir la transacción. Las peticiones ordinarias leen los permisos locales vigentes; no adquieren el bloqueo administrativo.
+
+Los cambios de rol revocan todas las sesiones del usuario; quitar permisos a un rol revoca las de todos sus usuarios. Agregar permisos se refleja en la siguiente petición sin exigir un nuevo login. Una petición ya autorizada puede seguir ejecutándose.
 
 ## Flujo de inicio de sesión
 
 1. El navegador navega a `GET /api/auth/login`. Opcionalmente puede pedir `?prompt=login` o `?prompt=select_account`; otro valor recibe `400`.
 2. `routes::login` genera PKCE S256, `state` y `nonce` mediante `openidconnect`. Crea un identificador aleatorio para la cookie temporal de correlación y guarda en `AuthState` el hash de ese identificador junto con `state`, `nonce`, el `code_verifier` y el instante de inicio. Otro login del mismo navegador invalida el flujo pendiente anterior. La respuesta redirige a Entra.
 3. Entra redirige el navegador mediante `GET` a `OIDC_REDIRECT_URI` con `code` y `state`. La cookie temporal permite encontrar el flujo pendiente. El callback lo consume una sola vez, verifica `state` y rechaza códigos o parámetros inválidos.
-4. `OidcProvider::exchange` canjea el código desde el servidor con el `code_verifier` y el secreto de cliente. La biblioteca valida el ID Token, incluida la firma, issuer, audiencia, expiración y `nonce`. La implementación comprueba además `tid`, `oid`, `nbf` si existe, `at_hash` si aparece y un único App Role admitido. Solo devuelve los datos verificados necesarios; los tokens del proveedor no se persisten.
-5. `SessionStore::replace` inserta el usuario si no existe y exige que esté activo. Usa `(entra_tenant_id, entra_object_id)`; nunca vincula cuentas por email. En la misma transacción actualiza rol y nombre de presentación, revoca la sesión anterior presentada por ese navegador, si la hay, e inserta la nueva sesión usando el reloj de PostgreSQL.
+4. `OidcProvider::exchange` canjea el código desde el servidor con el `code_verifier` y el secreto de cliente. La biblioteca valida el ID Token, incluida la firma, issuer, audiencia, expiración y `nonce`. La implementación comprueba además `tid`, `oid`, `nbf` si existe, `at_hash` si aparece. Solo devuelve los datos verificados necesarios; los tokens del proveedor no se persisten.
+5. `SessionStore::replace` inserta el usuario si no existe y exige que esté activo. Usa `(entra_tenant_id, entra_object_id)`; nunca vincula cuentas por email. En la misma transacción conserva el rol local, actualiza el nombre de presentación, revoca la sesión anterior presentada por ese navegador, si la hay, e inserta la nueva sesión usando el reloj de PostgreSQL.
 6. El callback elimina la cookie temporal, envía la cookie de sesión opaca y redirige a `POST_LOGIN_REDIRECT_PATH`. La SPA consulta después `GET /api/auth/me` para obtener `Principal` y sus permisos vigentes.
 
 Los flujos pendientes duran cinco minutos y se conservan únicamente en la memoria de ese proceso, con un máximo de 1024. Reiniciar la API los invalida; varias réplicas necesitan que login y callback lleguen a la misma instancia. Las sesiones completadas residen en PostgreSQL y pueden consultarse desde cualquier réplica conectada a esa base.
@@ -95,16 +126,24 @@ Los handlers de catálogo y administración declaran `Require<P>`, donde cada ti
 2. `SessionStore::authenticate` verifica la sesión y carga el usuario local. `identity::load_user` exige que siga activo y consulta en PostgreSQL su rol y los códigos de permiso actuales. `Principal` incluye identificador público, email, nombre, tenant, Object ID, rol y permisos. El `user_id` interno no se serializa ni aparece en OpenAPI.
 3. `Require<P>` comprueba que el código de permiso requerido esté en `Principal.permissions`. Sin sesión válida devuelve `401`; falta de permiso o usuario desactivado devuelve `403`. Los errores de base de datos se traducen en indisponibilidad sin exponer SQL ni credenciales.
 
-Como los permisos se leen en cada petición, un cambio del `role_id` local surte efecto en la siguiente solicitud autorizada. El cambio de App Role en Entra se refleja en ese campo al siguiente login. `auth` no decide qué campos de catálogo puede modificar cada rol: esas reglas están en los handlers y servicios de `modules`.
+Como los permisos se leen en cada petición, un cambio del `role_id` local surte efecto en la siguiente solicitud autorizada. `auth` no decide qué campos de catálogo puede modificar cada rol: esas reglas están en los handlers y servicios de `modules`.
 
 ## Desactivación y reactivación
 
 Un administrador de Tuercavo llama a `POST /api/users/{public_id}/deactivate` antes de retirar la asignación a la aplicación empresarial en Entra. `modules` bloquea la fila del usuario y, en la misma transacción, marca `is_active = false` y llama a `session::revoke_user` para revocar todas sus sesiones. Las sesiones revocadas no vuelven a ser válidas. `SessionStore::replace` también rechaza el siguiente login mientras el usuario esté inactivo. Después de confirmar la desactivación local, el administrador de Entra retira la asignación directa o la pertenencia a los grupos que conceden acceso.
 
-Para reactivar, el administrador restablece la asignación en Entra y llama a `POST /api/users/{public_id}/reactivate`. La API marca `is_active = true` sin restaurar sesiones; el usuario necesita un nuevo login para crear una. Ambas operaciones requieren el permiso `users.update`. Si se desactiva al único administrador local, el administrador del tenant puede asignar el App Role `admin` a otra persona en Entra. Su primer login crea el usuario local y le permite reactivar al anterior.
+Para reactivar, el administrador restablece la asignación en Entra y llama a `POST /api/users/{public_id}/reactivate`. La API marca `is_active = true` sin restaurar sesiones; el usuario necesita un nuevo login para crear una. Ambas operaciones requieren el permiso `users.update`. La desactivación del último administrador activo se rechaza; primero debe asignarse `admin` a otro usuario activo en Tuercavo.
 
 ## Salida de sesión
 
 `POST /api/auth/logout` exige el origen correcto, revoca en PostgreSQL la sesión presentada, cancela un login pendiente del mismo navegador si existe y elimina ambas cookies. Devuelve `204`. Es un cierre **local**: la sesión que Microsoft mantenga en Entra puede seguir vigente.
 
 `GET /api/auth/entra-logout` redirige al `end_session_endpoint` descubierto de Entra. Si se configuró `POST_LOGOUT_REDIRECT_URI`, la incluye como destino posterior. Esta ruta no revoca la sesión local: para cerrar ambas, el cliente debe llamar primero al logout local y después navegar a la ruta de Entra. Como el crate descarta el ID Token tras el callback, la redirección de salida no aporta un `id_token_hint`.
+
+## Verificación
+
+```sh
+cargo test --workspace --all-features --locked
+cargo check -p api --locked
+cargo check -p api --features scalar --locked
+```

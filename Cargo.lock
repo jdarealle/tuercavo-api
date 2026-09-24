@@ -341,6 +341,7 @@ dependencies = [
  "openidconnect",
  "sea-orm",
  "serde",
+ "serde_json",
  "sha2 0.10.9",
  "time",
  "tokio",
@@ -506,6 +507,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d2f6c7dbe95a6ed67ad9f18e57daf93a2f034c524b99fd2b76d18fdfeb6660aa"
 dependencies = [
  "hybrid-array",
+]
+
+[[package]]
+name = "bootstrap-admin"
+version = "0.1.0"
+dependencies = [
+ "auth",
+ "chrono",
+ "dotenvy",
+ "entity",
+ "sea-orm",
+ "tokio",
+ "uuid",
 ]
 
 [[package]]
