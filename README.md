@@ -2,6 +2,14 @@
 
 Backend REST para el catálogo de una ferretería: productos, categorías y proveedores. Autenticación OIDC con Microsoft Entra ID, sesiones en PostgreSQL y cookie opaca HttpOnly. Entra autentica a las personas asignadas a la aplicación; Tuercavo administra sus roles y permisos y crea el registro local como consultor en el primer login válido.
 
+## Stack tecnológico
+
+- **Servidor:** Rust, Axum y Tokio.
+- **Persistencia:** PostgreSQL, SeaORM y SeaORM Migration.
+- **Identidad:** Microsoft Entra ID mediante OIDC; sesiones locales con cookie opaca.
+- **Referencia de la API:** OpenAPI con utoipa y Scalar, habilitado solo en desarrollo.
+- **Entorno local:** Podman y Compose para PostgreSQL.
+
 ## Workspace
 
 | Crate | Responsabilidad |
@@ -16,7 +24,7 @@ Backend REST para el catálogo de una ferretería: productos, categorías y prov
 
 ### 1. Configurar el entorno
 
-Crea `.env` a partir de [`.env.sample`](.env.sample) si todavía no existe y sustituye los valores `REEMPLAZAR_…`. La API carga este archivo automáticamente; las variables ya exportadas en el entorno tienen prioridad.
+Crea `.env` a partir de [`.env.example`](.env.example) si todavía no existe y sustituye los valores `REEMPLAZAR_…`. La API carga este archivo automáticamente; las variables ya exportadas en el entorno tienen prioridad.
 
 | Variable | Uso / valor predeterminado |
 | --- | --- |
@@ -56,6 +64,19 @@ sea-orm-cli migrate up -d db/migration
 ```
 
 Las migraciones crean el esquema, los roles, los permisos y las sesiones. El archivo [`db/reference/ddl/tables.sql`](db/reference/ddl/tables.sql) sirve como referencia; la instalación se realiza mediante las migraciones.
+
+Si cambias el esquema, después de aplicar las migraciones regenera las entidades desde la raíz del repositorio:
+
+```sh
+sea-orm-cli generate entity \
+  --output-dir ./db/entity/src \
+  --entity-format dense \
+  --lib \
+  --enum-extra-derives 'serde::Serialize,serde::Deserialize' \
+  --enum-extra-attributes 'serde(rename_all = "snake_case")'
+```
+
+Ambas opciones de enum son necesarias: una añade los derives de Serde y la otra configura sus nombres serializados. Revisa los cambios generados antes de continuar.
 
 Para poblar opcionalmente una base de desarrollo recién migrada con categorías, proveedores y productos de ejemplo, aplica el archivo una sola vez después de las migraciones.
 
@@ -162,27 +183,6 @@ Los cambios de autorización y la revocación de sesiones se confirman en una mi
 
 Los intentos de login pendientes permanecen en memoria durante cinco minutos. Reiniciar la API los invalida; varias instancias necesitan afinidad durante ese flujo. Las sesiones ya creadas se conservan en PostgreSQL y siguen sujetas a vencimiento, inactividad y revocación.
 
-## Rutas principales
+## Referencia de la API
 
-| Método | Ruta | Uso |
-| --- | --- | --- |
-| `GET` | `/api/auth/login` | Iniciar el flujo OIDC; admite `prompt=select_account` o `prompt=login`. |
-| `GET` | `/api/auth/callback` | Recibir la respuesta del proveedor. |
-| `GET` | `/api/auth/me` | Consultar el usuario y sus permisos. |
-| `POST` | `/api/auth/logout` | Revocar la sesión local. |
-| `GET` | `/api/auth/entra-logout` | Redirigir el navegador al cierre de sesión de Entra después del logout local. |
-| `GET`, `POST` | `/api/products`, `/api/categories`, `/api/suppliers` | Listar o crear registros. |
-| `GET`, `PATCH`, `DELETE` | `/api/products/{public_id}`, `/api/categories/{public_id}`, `/api/suppliers/{public_id}` | Consultar, actualizar o eliminar un registro. |
-| `GET` | `/api/users` | Listar usuarios que ya iniciaron sesión por primera vez. |
-| `GET` | `/api/users/{public_id}` | Consultar un usuario. |
-| `POST` | `/api/users/{public_id}/deactivate` | Desactivar al usuario y revocar todas sus sesiones locales. |
-| `POST` | `/api/users/{public_id}/reactivate` | Reactivar el acceso local; requiere un nuevo login. |
-| `PUT` | `/api/users/{public_id}/role` | Asignar un rol local activo. |
-| `GET`, `POST` | `/api/roles` | Listar o crear roles. |
-| `GET`, `PATCH` | `/api/roles/{code}` | Consultar, renombrar o retirar un rol. |
-| `PUT` | `/api/roles/{code}/permissions` | Reemplazar sus permisos. |
-| `GET` | `/api/permissions` | Consultar el catálogo de permisos. |
-| `GET` | `/api/health/live` | Comprobar que el servidor responde. |
-| `GET` | `/api/health/ready` | Comprobar la conexión a PostgreSQL. |
-
-El catálogo y la administración requieren sesión y los permisos correspondientes. Los endpoints de salud son públicos. Scalar muestra los esquemas de entrada, las respuestas y los parámetros de cada operación.
+Con la feature `scalar` habilitada en desarrollo, consulta [Scalar](http://localhost:3000/scalar) para ver las operaciones, parámetros, cuerpos y respuestas. La especificación también está disponible en [`/api/openapi.json`](http://localhost:3000/api/openapi.json). El catálogo y la administración requieren sesión; los endpoints de salud son públicos.

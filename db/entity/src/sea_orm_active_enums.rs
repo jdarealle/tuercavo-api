@@ -3,7 +3,14 @@
 use sea_orm::entity::prelude::*;
 
 #[derive(
-    Debug, Clone, PartialEq, Eq, EnumIter, DeriveActiveEnum, serde::Serialize, serde::Deserialize,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    EnumIter,
+    DeriveActiveEnum,
+    serde :: Serialize,
+    serde :: Deserialize,
 )]
 #[sea_orm(rs_type = "Enum", db_type = "Enum", enum_name = "catalog_status")]
 #[serde(rename_all = "snake_case")]
