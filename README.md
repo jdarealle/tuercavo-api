@@ -76,11 +76,31 @@ Configura `ENTRA_TENANT_ID`, `ENTRA_CLIENT_ID` y `ENTRA_CLIENT_SECRET`. El secre
 
 Si configuras `POST_LOGOUT_REDIRECT_URI`, registra esa URL exacta como otra Redirect URI **Web**. Por ejemplo, `http://localhost:3000/signed-out` debe mostrar una pantalla pública de la SPA que no inicie el login automáticamente.
 
-Define los App Roles `admin`, `capturista` y `consultor` en esta misma App registration, con tipo **Users/Groups**. En la aplicación empresarial correspondiente configura **Assignment required = Yes**. La API también exige exactamente uno de esos roles en el ID Token; la asignación `Default Access` no basta. Consulta el [procedimiento técnico de alta](auth/README.md#alta-inicial-de-un-usuario) y la [documentación oficial de Microsoft](https://learn.microsoft.com/en-us/entra/identity-platform/howto-add-app-roles-in-apps).
+Los roles de las migraciones existen en PostgreSQL, pero **no crean los App Roles en Entra**. Configúralos en la App registration cuyo **Application (client) ID** pusiste en `ENTRA_CLIENT_ID`:
+
+1. En el [centro de administración de Microsoft Entra](https://entra.microsoft.com/), abre **Entra ID → App registrations → tuercavo-api → App roles → Create app role**.
+2. Crea un rol por cada fila de la tabla. Para cada uno, configura **Allowed member types = Users/Groups**, escribe el **Value** exactamente como aparece, añade una descripción, deja **Enable this app role** activado y pulsa **Apply**. **Display name** es el nombre visible en el portal; el backend comprueba el **Value** de la claim `roles`, no ese nombre.
+
+   | Display name sugerido | Value obligatorio |
+   | --- | --- |
+   | Administrador | `admin` |
+   | Capturista | `capturista` |
+   | Consultor | `consultor` |
+
+3. Abre **Entra ID → Enterprise applications → All applications → tuercavo-api → Properties**, cambia **Assignment required?** a **Yes** y pulsa **Save**. Es la aplicación empresarial asociada a esa misma App registration.
+
+Microsoft documenta por separado [la creación de App Roles](https://learn.microsoft.com/en-us/entra/identity-platform/howto-add-app-roles-in-apps) y [la propiedad Assignment required](https://learn.microsoft.com/en-us/entra/identity/enterprise-apps/add-application-portal-configure). La API exige exactamente uno de los tres valores en el ID Token; `Default Access` no contiene un App Role válido para Tuercavo.
 
 ### 5. Dar de alta al primer administrador y a los demás usuarios
 
-En **Enterprise applications → tuercavo-api → Users and groups**, asigna el rol `admin` a la persona que administrará Tuercavo. Es la misma operación para los usuarios siguientes, eligiendo su App Role. La persona debe existir antes en el tenant.
+La persona debe tener una cuenta en el tenant. Para asignarle acceso:
+
+1. En **Entra ID → Enterprise applications → All applications → tuercavo-api → Users and groups**, pulsa **Add user/group**.
+2. En **Users and groups**, busca a la persona, selecciónala y pulsa **Select**.
+3. En **Select a role**, elige `admin` para el primer administrador, o `capturista`/`consultor` para otro usuario, y pulsa **Select**. No elijas **Default Access**.
+4. Pulsa **Assign** y comprueba que la persona y su rol aparecen en **Users and groups**. Asigna a cada persona un solo App Role de Tuercavo, ya que el login rechaza cero o varios roles.
+
+Estos son los pasos de la [guía oficial para asignar usuarios a una aplicación empresarial](https://learn.microsoft.com/en-us/entra/identity/enterprise-apps/assign-user-or-group-access-portal). También puedes asignar grupos, pero Microsoft exige Entra ID P1 o P2 para esa modalidad y la pertenencia a grupos anidados no se propaga a la asignación.
 
 Al primer login, la API valida la asignación recibida en el ID Token y crea el registro local en PostgreSQL. Hasta ese momento la persona no aparece en `GET /api/users`. El registro local refleja un acceso ya autorizado por Entra.
 
