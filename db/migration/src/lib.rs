@@ -2,6 +2,7 @@ use sea_orm_migration::prelude::*;
 
 mod m20260917_000001_types;
 mod m20260917_000002_rbac;
+mod m20260917_000003_departments;
 mod m20260917_000003_users;
 mod m20260917_000004_categories;
 mod m20260917_000005_suppliers;
@@ -18,6 +19,7 @@ impl MigratorTrait for Migrator {
         vec![
             Box::new(m20260917_000001_types::Migration),
             Box::new(m20260917_000002_rbac::Migration),
+            Box::new(m20260917_000003_departments::Migration),
             Box::new(m20260917_000003_users::Migration),
             Box::new(m20260917_000004_categories::Migration),
             Box::new(m20260917_000005_suppliers::Migration),

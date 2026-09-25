@@ -3,6 +3,7 @@
 pub mod prelude;
 
 pub mod categories;
+pub mod departments;
 pub mod permissions;
 pub mod products;
 pub mod role_permissions;

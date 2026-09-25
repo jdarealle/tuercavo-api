@@ -44,12 +44,23 @@ CREATE TABLE role_permissions (
     CONSTRAINT fk_role_permissions_permission FOREIGN KEY (permission_id) REFERENCES permissions(id) ON DELETE RESTRICT
 );
 
+-- Departamentos de la empresa; nombre único sin distinguir mayúsculas.
+CREATE TABLE departments (
+    id INTEGER GENERATED ALWAYS AS IDENTITY,
+    name VARCHAR(150) NOT NULL,
+    CONSTRAINT pk_departments PRIMARY KEY (id),
+    CONSTRAINT ck_departments_name CHECK (char_length(name) BETWEEN 1 AND 150 AND name = btrim(name) AND name !~ '[[:cntrl:]]')
+);
+CREATE UNIQUE INDEX uq_departments_name ON departments (lower(name));
+
 -- Identidad por tenant/object ID. Email y nombre son metadatos opcionales, no únicos.
 -- Un único rol por usuario; los usuarios se desactivan, no se borran por API.
+-- El departamento es opcional y se administra localmente, sin afectar los permisos.
 CREATE TABLE users (
     id BIGINT GENERATED ALWAYS AS IDENTITY,
     public_id UUID NOT NULL DEFAULT gen_random_uuid(),
     role_id SMALLINT NOT NULL,
+    department_id INTEGER,
     entra_tenant_id UUID NOT NULL,
     entra_object_id UUID NOT NULL,
     email VARCHAR(254),
@@ -61,6 +72,7 @@ CREATE TABLE users (
     CONSTRAINT uq_users_public_id UNIQUE (public_id),
     CONSTRAINT uq_users_entra_identity UNIQUE (entra_tenant_id, entra_object_id),
     CONSTRAINT fk_users_role FOREIGN KEY (role_id) REFERENCES roles(id) ON DELETE RESTRICT,
+    CONSTRAINT fk_users_department FOREIGN KEY (department_id) REFERENCES departments(id) ON DELETE RESTRICT,
     CONSTRAINT ck_users_email CHECK (char_length(email) BETWEEN 1 AND 254 AND email = btrim(email) AND email !~ '[[:space:][:cntrl:]]'),
     CONSTRAINT ck_users_full_name CHECK (char_length(full_name) BETWEEN 1 AND 150 AND full_name = btrim(full_name) AND full_name !~ '[[:cntrl:]]')
 );
@@ -165,6 +177,7 @@ CREATE UNIQUE INDEX uq_products_sku ON products (lower(sku));
 -- PK y UNIQUE ya generan índices. Estos cubren FKs sin repetirlos.
 CREATE INDEX idx_role_permissions_permission_id ON role_permissions (permission_id);
 CREATE INDEX idx_users_role_id ON users (role_id);
+CREATE INDEX idx_users_department_id ON users (department_id);
 CREATE INDEX idx_products_category_id ON products (category_id);
 CREATE INDEX idx_products_supplier_id ON products (supplier_id);
 

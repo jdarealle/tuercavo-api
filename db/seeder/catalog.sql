@@ -1,6 +1,7 @@
 -- Datos opcionales para una base de desarrollo recién migrada. Aplicar una sola vez.
 -- Ejecutar con ON_ERROR_STOP para que cualquier error produzca un código de salida distinto de cero.
 -- Los productos se crean con referencias activas; después se aplican los estados finales.
+-- Los departamentos no se precargan: se crean al definir la organización; users.department_id admite NULL.
 
 BEGIN;
 SET LOCAL TIME ZONE 'UTC';

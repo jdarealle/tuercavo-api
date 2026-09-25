@@ -11,6 +11,7 @@ pub struct Model {
     #[sea_orm(unique)]
     pub public_id: Uuid,
     pub role_id: i16,
+    pub department_id: Option<i32>,
     #[sea_orm(unique_key = "uq_users_entra_identity")]
     pub entra_tenant_id: Uuid,
     #[sea_orm(unique_key = "uq_users_entra_identity")]
@@ -20,6 +21,14 @@ pub struct Model {
     pub is_active: bool,
     pub created_at: DateTimeWithTimeZone,
     pub updated_at: DateTimeWithTimeZone,
+    #[sea_orm(
+        belongs_to,
+        from = "department_id",
+        to = "id",
+        on_update = "NoAction",
+        on_delete = "Restrict"
+    )]
+    pub departments: BelongsTo<Option<super::departments::Entity>>,
     #[sea_orm(
         belongs_to,
         from = "role_id",

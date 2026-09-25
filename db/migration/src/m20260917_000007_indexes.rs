@@ -27,6 +27,15 @@ impl MigrationTrait for Migration {
         manager
             .create_index(
                 Index::create()
+                    .name("idx_users_department_id")
+                    .table(Users::Table)
+                    .col(Users::DepartmentId)
+                    .to_owned(),
+            )
+            .await?;
+        manager
+            .create_index(
+                Index::create()
                     .name("idx_products_category_id")
                     .table(Products::Table)
                     .col(Products::CategoryId)
@@ -50,6 +59,7 @@ impl MigrationTrait for Migration {
             "idx_products_supplier_id",
             "idx_products_category_id",
             "idx_users_role_id",
+            "idx_users_department_id",
             "idx_role_permissions_permission_id",
         ] {
             manager
@@ -77,4 +87,5 @@ enum RolePermissions {
 enum Users {
     Table,
     RoleId,
+    DepartmentId,
 }
