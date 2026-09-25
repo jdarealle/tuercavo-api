@@ -1,5 +1,5 @@
 use super::{dto::*, service};
-use auth::{AuthErrorResponse, AuthUser, Permission, Require};
+use auth::{AuthErrorResponse, AuthUser, Permission, Require, permission};
 use axum::{
     Json,
     extract::State,
@@ -14,12 +14,12 @@ use uuid::Uuid;
 
 pub struct Read;
 impl Permission for Read {
-    const CODE: &'static str = "departments.read";
+    const CODE: &'static str = permission::DEPARTMENTS_READ;
 }
 
 pub struct Create;
 impl Permission for Create {
-    const CODE: &'static str = "departments.create";
+    const CODE: &'static str = permission::DEPARTMENTS_CREATE;
 }
 
 #[utoipa::path(get, path = "/departments", tag = "departments", operation_id = "list_departments",
@@ -28,10 +28,9 @@ impl Permission for Create {
         (status = 401, body = AuthErrorResponse), (status = 403, body = AuthErrorResponse),
         (status = 503, body = AuthErrorResponse)), security(("session" = [])))]
 pub async fn list(
-    actor: Require<Read>,
+    _actor: Require<Read>,
     State(state): State<AppState>,
 ) -> Result<Json<Vec<DepartmentResponse>>, AppError> {
-    crate::authorization::require_admin(&actor.0)?;
     Ok(Json(service::list(&state.db).await?))
 }
 
@@ -59,11 +58,10 @@ pub async fn mine(
         (status = 403, body = AuthErrorResponse), (status = 503, body = AuthErrorResponse)),
     security(("session" = [])))]
 pub async fn get(
-    actor: Require<Read>,
+    _actor: Require<Read>,
     State(state): State<AppState>,
     Path(public_id): Path<Uuid>,
 ) -> Result<Json<DepartmentResponse>, AppError> {
-    crate::authorization::require_admin(&actor.0)?;
     Ok(Json(service::get(&state.db, public_id).await?))
 }
 
@@ -86,7 +84,6 @@ pub async fn create(
     ),
     AppError,
 > {
-    crate::authorization::require_admin(&actor.0)?;
     let department =
         service::create(&state.db, actor.0.user_id, state.auth.tenant_id(), body).await?;
     Ok((

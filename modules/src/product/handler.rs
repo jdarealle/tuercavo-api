@@ -1,5 +1,5 @@
 use super::{dto::*, service};
-use auth::{AuthErrorResponse, Permission, Require};
+use auth::{AuthErrorResponse, Permission, Require, permission};
 use axum::{
     Json,
     extract::State,
@@ -14,19 +14,19 @@ use common::{
 use uuid::Uuid;
 pub struct Read;
 impl Permission for Read {
-    const CODE: &'static str = "products.read";
+    const CODE: &'static str = permission::PRODUCTS_READ;
 }
 pub struct Create;
 impl Permission for Create {
-    const CODE: &'static str = "products.create";
+    const CODE: &'static str = permission::PRODUCTS_CREATE;
 }
 pub struct Update;
 impl Permission for Update {
-    const CODE: &'static str = "products.update";
+    const CODE: &'static str = permission::PRODUCTS_UPDATE;
 }
 pub struct Delete;
 impl Permission for Delete {
-    const CODE: &'static str = "products.delete";
+    const CODE: &'static str = permission::PRODUCTS_DELETE;
 }
 
 #[utoipa::path(get, path = "/products", tag = "products", operation_id = "list_products", params(ProductFilters), responses((status = 200, body = Page<ProductResponse>), (status = 400, body = ErrorResponse), (status = 404, body = ErrorResponse), (status = 409, body = ErrorResponse), (status = 500, body = ErrorResponse), (status = 401, body = AuthErrorResponse), (status = 403, body = AuthErrorResponse), (status = 503, body = AuthErrorResponse)), security(("session" = [])))]

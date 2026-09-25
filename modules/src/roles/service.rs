@@ -1,5 +1,5 @@
 use super::dto::*;
-use auth::authorization;
+use auth::{authorization, permission};
 use common::{error::AppError, validation};
 use entity::{permissions, role_permissions, roles, sessions, users};
 use sea_orm::{
@@ -117,7 +117,7 @@ pub async fn create(
 ) -> Result<RoleResponse, AppError> {
     let code = code(body.code)?;
     let name = validation::text(body.name, "name", 80)?;
-    let (tx, _) = crate::authorization::begin(db, actor, tenant, "roles.create").await?;
+    let (tx, _) = crate::authorization::begin(db, actor, tenant, permission::ROLES_CREATE).await?;
     let role = roles::ActiveModel {
         code: Set(code),
         name: Set(name),
@@ -146,7 +146,7 @@ pub async fn update(
     if name.is_none() && active.is_none() {
         return Err(AppError::bad("Indica name o is_active"));
     }
-    let (tx, _) = crate::authorization::begin(db, actor, tenant, "roles.update").await?;
+    let (tx, _) = crate::authorization::begin(db, actor, tenant, permission::ROLES_UPDATE).await?;
     let role = find(&tx, code).await?;
     if active == Some(false) {
         if authorization::is_system_role(code) {
@@ -190,7 +190,8 @@ pub async fn set_permissions(
     let requested: Vec<_> = distinct.into_iter().collect();
     authorization::validate_grants(code, &requested).map_err(AppError::conflict)?;
     let (tx, _) =
-        crate::authorization::begin(db, actor, tenant, "roles.assign_permissions").await?;
+        crate::authorization::begin(db, actor, tenant, permission::ROLES_ASSIGN_PERMISSIONS)
+            .await?;
     let role = find(&tx, code).await?;
     let available = permissions::Entity::find()
         .filter(permissions::Column::Code.is_in(requested.clone()))

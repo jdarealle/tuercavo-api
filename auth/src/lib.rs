@@ -10,6 +10,7 @@ pub mod error;
 mod extractor;
 pub mod identity;
 mod oidc;
+pub mod permission;
 mod routes;
 pub mod session;
 mod state;

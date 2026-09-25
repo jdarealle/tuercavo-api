@@ -1,4 +1,5 @@
 use super::dto::{CreateDepartment, DepartmentResponse};
+use auth::permission;
 use common::{error::AppError, validation};
 use entity::departments;
 use sea_orm::{
@@ -33,7 +34,7 @@ pub async fn create(
 ) -> Result<DepartmentResponse, AppError> {
     let name = validation::text(body.name, "name", 150)?;
     let (tx, _) =
-        crate::authorization::begin_admin(db, actor_id, tenant, "departments.create").await?;
+        crate::authorization::begin(db, actor_id, tenant, permission::DEPARTMENTS_CREATE).await?;
     let department = departments::ActiveModel {
         name: Set(name),
         ..Default::default()

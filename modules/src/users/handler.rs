@@ -1,5 +1,5 @@
 use super::{dto::*, service};
-use auth::{AuthErrorResponse, Permission, Require};
+use auth::{AuthErrorResponse, Permission, Require, permission};
 use axum::{Json, extract::State};
 use common::{
     error::{AppError, ErrorResponse},
@@ -11,19 +11,19 @@ use uuid::Uuid;
 
 pub struct Read;
 impl Permission for Read {
-    const CODE: &'static str = "users.read";
+    const CODE: &'static str = permission::USERS_READ;
 }
 pub struct Update;
 impl Permission for Update {
-    const CODE: &'static str = "users.update";
+    const CODE: &'static str = permission::USERS_UPDATE;
 }
 pub struct Assign;
 impl Permission for Assign {
-    const CODE: &'static str = "users.assign_role";
+    const CODE: &'static str = permission::USERS_ASSIGN_ROLE;
 }
 pub struct AssignDepartmentPermission;
 impl Permission for AssignDepartmentPermission {
-    const CODE: &'static str = "users.assign_department";
+    const CODE: &'static str = permission::USERS_ASSIGN_DEPARTMENT;
 }
 
 #[utoipa::path(get, path = "/users", tag = "users", operation_id = "list_users", params(Pagination), responses(
@@ -116,7 +116,6 @@ pub async fn assign_department(
     Path(id): Path<Uuid>,
     Input(body): Input<AssignDepartment>,
 ) -> Result<Json<UserResponse>, AppError> {
-    crate::authorization::require_admin(&actor.0)?;
     let department_public_id = body
         .department_public_id
         .optional()

@@ -4,7 +4,7 @@ use serde::Serialize;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
-use crate::AuthError;
+use crate::{AuthError, authorization, permission};
 
 #[derive(Clone, Serialize, ToSchema)]
 pub struct Principal {
@@ -22,11 +22,53 @@ pub struct Principal {
 }
 
 impl Principal {
-    pub fn require(&self, permission: &str) -> Result<(), AuthError> {
-        if self.permissions.iter().any(|value| value == permission) {
+    pub fn require(&self, code: &str) -> Result<(), AuthError> {
+        if self.permissions.iter().any(|value| value == code)
+            && (!permission::ADMIN_ONLY.contains(&code) || self.role == authorization::ADMIN_ROLE)
+        {
             Ok(())
         } else {
             Err(AuthError::Forbidden)
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn principal(role: &str, permissions: Vec<String>) -> Principal {
+        Principal {
+            user_id: 1,
+            public_id: Uuid::from_u128(1),
+            email: None,
+            full_name: None,
+            department_public_id: None,
+            tenant_id: Uuid::from_u128(2),
+            object_id: Uuid::from_u128(3),
+            role: role.into(),
+            permissions,
+        }
+    }
+
+    #[test]
+    fn permission_policy_rejects_missing_grants_and_non_admin_department_access() {
+        let all: Vec<String> = permission::ALL.iter().map(|code| (*code).into()).collect();
+        let admin = principal(authorization::ADMIN_ROLE, all.clone());
+        let other = principal("gerente", all);
+        let empty = principal(authorization::ADMIN_ROLE, vec![]);
+
+        for code in permission::ALL {
+            assert!(admin.require(code).is_ok(), "admin should have {code}");
+            assert!(matches!(empty.require(code), Err(AuthError::Forbidden)));
+            if permission::ADMIN_ONLY.contains(code) {
+                assert!(matches!(other.require(code), Err(AuthError::Forbidden)));
+            } else {
+                assert!(
+                    other.require(code).is_ok(),
+                    "custom role should have {code}"
+                );
+            }
         }
     }
 }

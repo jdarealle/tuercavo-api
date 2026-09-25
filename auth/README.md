@@ -36,6 +36,7 @@ api::main
 | [`src/identity.rs`](src/identity.rs) | Carga al usuario activo y sus permisos actuales desde las entidades; define `Principal`, el resultado de `/api/auth/me` y de los extractores. |
 | [`src/extractor.rs`](src/extractor.rs) | Implementa `AuthUser`, `Require<P>` y `SameOrigin` como extractores Axum para autenticación, autorización y control de origen. |
 | [`src/authorization.rs`](src/authorization.rs) | Define los roles protegidos, valida sus permisos y coordina bloqueos transaccionales. |
+| [`src/permission.rs`](src/permission.rs) | Centraliza los códigos de permiso implementados y las restricciones de asignación por rol. |
 | [`src/error.rs`](src/error.rs) | Convierte errores de autenticación en respuestas HTTP JSON sin exponer detalles de la base de datos ni del proveedor. |
 
 ## Arranque y configuración
@@ -90,7 +91,9 @@ La API solicita el scope OIDC `email` y guarda el claim del ID Token, si está p
 
 `PUT /api/roles/{code}/permissions` reemplaza la lista completa y rechaza códigos desconocidos o repetidos. Los códigos del catálogo representan operaciones implementadas en Rust; su incorporación se versiona con el backend. Las migraciones futuras deben respetar las asignaciones personalizadas.
 
-`departments` es una clasificación local opcional. `/api/auth/me` expone `department_public_id`; Entra no lo proporciona y el callback no sobrescribe la asignación. La tabla `permissions` contiene `departments.read`, `departments.create` y `users.assign_department`; la migración los asigna a `admin`. La API impide otorgarlos a roles personalizados y exige el rol `admin` en las rutas administrativas. Cambiar la asignación no altera los permisos ni revoca sesiones. Las rutas y ejemplos de administración de departamentos están en el [README principal](../README.md).
+Los códigos que usan los handlers y servicios se definen una vez en `src/permission.rs`; una prueba compara ese inventario con el catálogo de la migración y el SQL de referencia. La API permite consultar el catálogo y modificar las asignaciones a roles, pero no ofrece crear, renombrar ni borrar códigos de permiso desde HTTP.
+
+`departments` es una clasificación local opcional. `/api/auth/me` expone `department_public_id`; Entra no lo proporciona y el callback no sobrescribe la asignación. La tabla `permissions` contiene `departments.read`, `departments.create` y `users.assign_department`; la migración los asigna a `admin`. La API impide otorgarlos a roles personalizados. `Principal::require` exige tanto el permiso como el rol `admin` en las rutas administrativas, y la comprobación se repite dentro de la transacción de escritura. Cambiar la asignación no altera los permisos ni revoca sesiones. Las rutas y ejemplos de administración de departamentos están en el [README principal](../README.md).
 `GET /api/departments/me` usa `AuthUser` para que cualquier usuario activo consulte el nombre y UUID público de su propio departamento sin permiso adicional; devuelve `null` cuando no tiene asignación. La consulta general de departamentos conserva el requisito de rol `admin` y permiso `departments.read`.
 
 `PATCH /api/roles/{code}` modifica `name` o `is_active`; retirar un rol exige que ningún usuario lo tenga asignado, incluidos los inactivos. La API conserva el rol y permite reactivarlo. `PUT /api/users/{public_id}/role` exige un rol activo y revoca las sesiones cuando hay un cambio.

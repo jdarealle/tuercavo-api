@@ -1,5 +1,5 @@
 use super::{dto::*, service};
-use auth::{AuthErrorResponse, Permission, Require};
+use auth::{AuthErrorResponse, Permission, Require, permission};
 use axum::{Json, extract::State, http::StatusCode};
 use common::{
     error::{AppError, ErrorResponse},
@@ -9,23 +9,23 @@ use common::{
 
 pub struct Read;
 impl Permission for Read {
-    const CODE: &'static str = "roles.read";
+    const CODE: &'static str = permission::ROLES_READ;
 }
 pub struct ReadPermissions;
 impl Permission for ReadPermissions {
-    const CODE: &'static str = "permissions.read";
+    const CODE: &'static str = permission::PERMISSIONS_READ;
 }
 pub struct Create;
 impl Permission for Create {
-    const CODE: &'static str = "roles.create";
+    const CODE: &'static str = permission::ROLES_CREATE;
 }
 pub struct Update;
 impl Permission for Update {
-    const CODE: &'static str = "roles.update";
+    const CODE: &'static str = permission::ROLES_UPDATE;
 }
 pub struct AssignPermissions;
 impl Permission for AssignPermissions {
-    const CODE: &'static str = "roles.assign_permissions";
+    const CODE: &'static str = permission::ROLES_ASSIGN_PERMISSIONS;
 }
 
 #[utoipa::path(get, path = "/roles", tag = "roles", operation_id = "list_roles",

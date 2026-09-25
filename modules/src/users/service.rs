@@ -1,4 +1,5 @@
 use super::dto::*;
+use auth::permission;
 use common::{
     error::AppError,
     pagination::{Page, Pagination},
@@ -127,7 +128,8 @@ async fn set_active(
     public_id: Uuid,
     active: bool,
 ) -> Result<UserResponse, AppError> {
-    let (tx, admin_id) = crate::authorization::begin(db, actor_id, tenant, "users.update").await?;
+    let (tx, admin_id) =
+        crate::authorization::begin(db, actor_id, tenant, permission::USERS_UPDATE).await?;
     let user = target(&tx, tenant, public_id).await?;
     if !active {
         // Revoking on repeated calls also covers any session created by a
@@ -174,7 +176,7 @@ pub async fn assign_role(
     code: &str,
 ) -> Result<UserResponse, AppError> {
     let (tx, admin_id) =
-        crate::authorization::begin(db, actor_id, tenant, "users.assign_role").await?;
+        crate::authorization::begin(db, actor_id, tenant, permission::USERS_ASSIGN_ROLE).await?;
     let user = target(&tx, tenant, public_id).await?;
     let role = roles::Entity::find()
         .filter(roles::Column::Code.eq(code))
@@ -206,7 +208,8 @@ pub async fn assign_department(
     department_public_id: Option<Uuid>,
 ) -> Result<UserResponse, AppError> {
     let (tx, _) =
-        crate::authorization::begin_admin(db, actor_id, tenant, "users.assign_department").await?;
+        crate::authorization::begin(db, actor_id, tenant, permission::USERS_ASSIGN_DEPARTMENT)
+            .await?;
     let user = target(&tx, tenant, public_id).await?;
     let department_id = match department_public_id {
         Some(public_id) => Some(

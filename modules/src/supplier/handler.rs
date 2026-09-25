@@ -1,6 +1,6 @@
 use super::{dto::*, service};
 use crate::catalog::Filters;
-use auth::{AuthErrorResponse, Permission, Require};
+use auth::{AuthErrorResponse, Permission, Require, permission};
 use axum::{
     Json,
     extract::State,
@@ -15,19 +15,19 @@ use common::{
 use uuid::Uuid;
 pub struct Read;
 impl Permission for Read {
-    const CODE: &'static str = "suppliers.read";
+    const CODE: &'static str = permission::SUPPLIERS_READ;
 }
 pub struct Create;
 impl Permission for Create {
-    const CODE: &'static str = "suppliers.create";
+    const CODE: &'static str = permission::SUPPLIERS_CREATE;
 }
 pub struct Update;
 impl Permission for Update {
-    const CODE: &'static str = "suppliers.update";
+    const CODE: &'static str = permission::SUPPLIERS_UPDATE;
 }
 pub struct Delete;
 impl Permission for Delete {
-    const CODE: &'static str = "suppliers.delete";
+    const CODE: &'static str = permission::SUPPLIERS_DELETE;
 }
 
 #[utoipa::path(get, path = "/suppliers", tag = "suppliers", operation_id = "list_suppliers", params(Filters), responses((status = 200, body = Page<SupplierResponse>), (status = 400, body = ErrorResponse), (status = 404, body = ErrorResponse), (status = 409, body = ErrorResponse), (status = 500, body = ErrorResponse), (status = 401, body = AuthErrorResponse), (status = 403, body = AuthErrorResponse), (status = 503, body = AuthErrorResponse)), security(("session" = [])))]
