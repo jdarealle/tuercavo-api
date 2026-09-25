@@ -14,40 +14,45 @@ use uuid::Uuid;
 
 pub struct Read;
 impl Permission for Read {
-    const CODE: &'static str = "users.read";
+    const CODE: &'static str = "departments.read";
 }
 
 pub struct Create;
 impl Permission for Create {
-    const CODE: &'static str = "users.update";
+    const CODE: &'static str = "departments.create";
 }
 
 #[utoipa::path(get, path = "/departments", tag = "departments", operation_id = "list_departments",
+    description = "Solo el rol local admin puede consultar departamentos.",
     responses((status = 200, body = Vec<DepartmentResponse>),
         (status = 401, body = AuthErrorResponse), (status = 403, body = AuthErrorResponse),
         (status = 503, body = AuthErrorResponse)), security(("session" = [])))]
 pub async fn list(
-    _actor: Require<Read>,
+    actor: Require<Read>,
     State(state): State<AppState>,
 ) -> Result<Json<Vec<DepartmentResponse>>, AppError> {
+    crate::authorization::require_admin(&actor.0)?;
     Ok(Json(service::list(&state.db).await?))
 }
 
 #[utoipa::path(get, path = "/departments/{public_id}", tag = "departments", operation_id = "get_department",
+    description = "Solo el rol local admin puede consultar departamentos.",
     params(("public_id" = Uuid, Path)),
     responses((status = 200, body = DepartmentResponse), (status = 400, body = ErrorResponse),
         (status = 404, body = ErrorResponse), (status = 401, body = AuthErrorResponse),
         (status = 403, body = AuthErrorResponse), (status = 503, body = AuthErrorResponse)),
     security(("session" = [])))]
 pub async fn get(
-    _actor: Require<Read>,
+    actor: Require<Read>,
     State(state): State<AppState>,
     Path(public_id): Path<Uuid>,
 ) -> Result<Json<DepartmentResponse>, AppError> {
+    crate::authorization::require_admin(&actor.0)?;
     Ok(Json(service::get(&state.db, public_id).await?))
 }
 
 #[utoipa::path(post, path = "/departments", tag = "departments", operation_id = "create_department",
+    description = "Solo el rol local admin puede crear departamentos.",
     request_body = CreateDepartment,
     responses((status = 201, body = DepartmentResponse, headers(("Location" = String, description = "URL del departamento creado"))),
         (status = 400, body = ErrorResponse), (status = 409, body = ErrorResponse),
@@ -65,6 +70,7 @@ pub async fn create(
     ),
     AppError,
 > {
+    crate::authorization::require_admin(&actor.0)?;
     let department =
         service::create(&state.db, actor.0.user_id, state.auth.tenant_id(), body).await?;
     Ok((

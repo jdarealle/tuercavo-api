@@ -2,6 +2,7 @@
 -- Ejecutar con ON_ERROR_STOP para que cualquier error produzca un código de salida distinto de cero.
 -- Los productos se crean con referencias activas; después se aplican los estados finales.
 -- Los departamentos no se precargan: se crean al definir la organización con public_id generado; users.department_id admite NULL.
+-- Los permisos de departamentos se cargan en la migración de datos de referencia; este catálogo no los modifica.
 
 BEGIN;
 SET LOCAL TIME ZONE 'UTC';

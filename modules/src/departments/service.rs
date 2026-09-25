@@ -32,7 +32,8 @@ pub async fn create(
     body: CreateDepartment,
 ) -> Result<DepartmentResponse, AppError> {
     let name = validation::text(body.name, "name", 150)?;
-    let (tx, _) = crate::authorization::begin(db, actor_id, tenant, "users.update").await?;
+    let (tx, _) =
+        crate::authorization::begin_admin(db, actor_id, tenant, "departments.create").await?;
     let department = departments::ActiveModel {
         name: Set(name),
         ..Default::default()

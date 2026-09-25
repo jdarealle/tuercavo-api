@@ -12,6 +12,9 @@ pub const ADMIN_REQUIRED: &[&str] = &[
     "users.read",
     "users.update",
     "users.assign_role",
+    "departments.read",
+    "departments.create",
+    "users.assign_department",
     "roles.read",
     "roles.create",
     "roles.update",
@@ -19,6 +22,11 @@ pub const ADMIN_REQUIRED: &[&str] = &[
     "permissions.read",
 ];
 pub const DEFAULT_ALLOWED: &[&str] = &["products.read", "categories.read", "suppliers.read"];
+pub const ADMIN_ONLY: &[&str] = &[
+    "departments.read",
+    "departments.create",
+    "users.assign_department",
+];
 
 pub fn is_system_role(code: &str) -> bool {
     matches!(code, ADMIN_ROLE | DEFAULT_ROLE)
@@ -38,6 +46,9 @@ pub fn validate_grants(code: &str, grants: &[String]) -> Result<(), &'static str
             .any(|g| !DEFAULT_ALLOWED.contains(&g.as_str()))
     {
         return Err("consultor solo admite permisos de lectura del catálogo");
+    }
+    if code != ADMIN_ROLE && grants.iter().any(|g| ADMIN_ONLY.contains(&g.as_str())) {
+        return Err("los permisos de departamentos son exclusivos de admin");
     }
     Ok(())
 }
@@ -84,7 +95,13 @@ mod tests {
 
     #[test]
     fn default_role_cannot_gain_write_or_administration_permissions() {
-        for permission in ["products.create", "users.read", "roles.assign_permissions"] {
+        for permission in [
+            "products.create",
+            "users.read",
+            "departments.read",
+            "users.assign_department",
+            "roles.assign_permissions",
+        ] {
             assert!(validate_grants(DEFAULT_ROLE, &[permission.into()]).is_err());
         }
         assert!(validate_grants(DEFAULT_ROLE, &["products.read".into()]).is_ok());
@@ -101,5 +118,8 @@ mod tests {
             assert!(validate_grants(ADMIN_ROLE, &grants).is_err());
         }
         assert!(validate_grants("inventario", &["products.update".into()]).is_ok());
+        for permission in ADMIN_ONLY {
+            assert!(validate_grants("inventario", &[(*permission).into()]).is_err());
+        }
     }
 }

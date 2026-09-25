@@ -205,7 +205,8 @@ pub async fn assign_department(
     public_id: Uuid,
     department_public_id: Option<Uuid>,
 ) -> Result<UserResponse, AppError> {
-    let (tx, _) = crate::authorization::begin(db, actor_id, tenant, "users.update").await?;
+    let (tx, _) =
+        crate::authorization::begin_admin(db, actor_id, tenant, "users.assign_department").await?;
     let user = target(&tx, tenant, public_id).await?;
     let department_id = match department_public_id {
         Some(public_id) => Some(

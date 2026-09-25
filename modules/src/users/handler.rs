@@ -21,6 +21,10 @@ pub struct Assign;
 impl Permission for Assign {
     const CODE: &'static str = "users.assign_role";
 }
+pub struct AssignDepartmentPermission;
+impl Permission for AssignDepartmentPermission {
+    const CODE: &'static str = "users.assign_department";
+}
 
 #[utoipa::path(get, path = "/users", tag = "users", operation_id = "list_users", params(Pagination), responses(
     (status = 200, body = Page<UserResponse>), (status = 400, body = ErrorResponse),
@@ -100,18 +104,19 @@ pub async fn assign_role(
 }
 
 #[utoipa::path(put, path = "/users/{public_id}/department", tag = "users", operation_id = "assign_user_department",
-    description = "Asigna un departamento local por UUID público o quita la asignación con department_public_id: null. No cambia el rol ni las sesiones.",
+    description = "Solo el rol local admin puede asignar un departamento por UUID público o quitar la asignación con department_public_id: null. No cambia el rol ni las sesiones.",
     params(("public_id" = Uuid, Path)), request_body = AssignDepartment,
     responses((status = 200, body = UserResponse), (status = 400, body = ErrorResponse),
         (status = 404, body = ErrorResponse), (status = 409, body = ErrorResponse),
         (status = 401, body = AuthErrorResponse), (status = 403, body = AuthErrorResponse), (status = 503, body = AuthErrorResponse)),
     security(("session" = [])))]
 pub async fn assign_department(
-    actor: Require<Update>,
+    actor: Require<AssignDepartmentPermission>,
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
     Input(body): Input<AssignDepartment>,
 ) -> Result<Json<UserResponse>, AppError> {
+    crate::authorization::require_admin(&actor.0)?;
     let department_public_id = body
         .department_public_id
         .optional()

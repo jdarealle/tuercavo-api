@@ -75,9 +75,10 @@ La API solicita el scope OIDC `email` y guarda el claim del ID Token, si está p
 | Operación | Permiso |
 | --- | --- |
 | Listar/consultar usuarios | `users.read` |
-| Listar/consultar departamentos | `users.read` |
+| Listar/consultar departamentos (solo `admin`) | `departments.read` |
 | Desactivar/reactivar usuarios | `users.update` |
-| Crear departamentos y asignarlos o quitarlos de usuarios | `users.update` |
+| Crear departamentos (solo `admin`) | `departments.create` |
+| Asignar o quitar departamentos de usuarios (solo `admin`) | `users.assign_department` |
 | Asignar un rol | `users.assign_role` |
 | Listar/consultar roles | `roles.read` |
 | Crear roles | `roles.create` |
@@ -89,7 +90,7 @@ La API solicita el scope OIDC `email` y guarda el claim del ID Token, si está p
 
 `PUT /api/roles/{code}/permissions` reemplaza la lista completa y rechaza códigos desconocidos o repetidos. Los códigos del catálogo representan operaciones implementadas en Rust; su incorporación se versiona con el backend. Las migraciones futuras deben respetar las asignaciones personalizadas.
 
-`departments` es una clasificación local opcional. `/api/auth/me` expone `department_public_id`; Entra no lo proporciona y el callback no sobrescribe la asignación. Cambiarlo no altera los permisos ni revoca sesiones. Las rutas y ejemplos de administración de departamentos están en el [README principal](../README.md).
+`departments` es una clasificación local opcional. `/api/auth/me` expone `department_public_id`; Entra no lo proporciona y el callback no sobrescribe la asignación. La tabla `permissions` contiene `departments.read`, `departments.create` y `users.assign_department`; la migración los asigna a `admin`. La API impide otorgarlos a roles personalizados y exige el rol `admin` en las rutas. Cambiar la asignación no altera los permisos ni revoca sesiones. Las rutas y ejemplos de administración de departamentos están en el [README principal](../README.md).
 
 `PATCH /api/roles/{code}` modifica `name` o `is_active`; retirar un rol exige que ningún usuario lo tenga asignado, incluidos los inactivos. La API conserva el rol y permite reactivarlo. `PUT /api/users/{public_id}/role` exige un rol activo y revoca las sesiones cuando hay un cambio.
 
