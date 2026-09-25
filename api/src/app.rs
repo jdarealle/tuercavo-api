@@ -75,6 +75,7 @@ mod tests {
         assert!(paths["/api/users/{public_id}/department"].put.is_some());
         assert!(paths["/api/departments"].get.is_some());
         assert!(paths["/api/departments"].post.is_some());
+        assert!(paths["/api/departments/me"].get.is_some());
         assert!(paths["/api/departments/{public_id}"].get.is_some());
         assert!(paths["/api/permissions"].get.is_some());
     }

@@ -1,5 +1,5 @@
 use super::{dto::*, service};
-use auth::{AuthErrorResponse, Permission, Require};
+use auth::{AuthErrorResponse, AuthUser, Permission, Require};
 use axum::{
     Json,
     extract::State,
@@ -33,6 +33,22 @@ pub async fn list(
 ) -> Result<Json<Vec<DepartmentResponse>>, AppError> {
     crate::authorization::require_admin(&actor.0)?;
     Ok(Json(service::list(&state.db).await?))
+}
+
+#[utoipa::path(get, path = "/departments/me", tag = "departments", operation_id = "get_my_department",
+    description = "Consulta el departamento del usuario autenticado, sin depender de su rol. Devuelve null si no tiene departamento asignado.",
+    responses((status = 200, body = Option<DepartmentResponse>),
+        (status = 401, body = AuthErrorResponse), (status = 403, body = AuthErrorResponse),
+        (status = 503, body = AuthErrorResponse)), security(("session" = [])))]
+pub async fn mine(
+    actor: AuthUser,
+    State(state): State<AppState>,
+) -> Result<Json<Option<DepartmentResponse>>, AppError> {
+    let department = match actor.0.department_public_id {
+        Some(public_id) => Some(service::get(&state.db, public_id).await?),
+        None => None,
+    };
+    Ok(Json(department))
 }
 
 #[utoipa::path(get, path = "/departments/{public_id}", tag = "departments", operation_id = "get_department",
