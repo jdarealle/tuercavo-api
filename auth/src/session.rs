@@ -65,8 +65,8 @@ impl SessionStore {
             role_id: Set(role.id),
             entra_tenant_id: Set(identity.tenant_id),
             entra_object_id: Set(identity.object_id),
-            // Entra's email claim is not an addressable contact field.
-            email: Set(None),
+            // Display data only; identity and authorization use tenant/object IDs.
+            email: Set(identity.email.clone()),
             full_name: Set(identity.full_name.clone()),
             created_at: Set(now),
             updated_at: Set(now),
@@ -90,9 +90,14 @@ impl SessionStore {
         if !user.is_active {
             return Err(AuthError::Forbidden);
         }
-        if user.full_name != identity.full_name {
+        if user.full_name != identity.full_name || user.email != identity.email {
             let mut update: users::ActiveModel = user.clone().into();
-            update.full_name = Set(identity.full_name.clone());
+            if user.full_name != identity.full_name {
+                update.full_name = Set(identity.full_name.clone());
+            }
+            if user.email != identity.email {
+                update.email = Set(identity.email.clone());
+            }
             update.updated_at = Set(now);
             update.update(&tx).await?;
         }
@@ -215,7 +220,7 @@ mod tests {
     use std::collections::BTreeMap;
 
     #[tokio::test]
-    async fn a_new_login_preserves_custom_role_while_refreshing_display_name() {
+    async fn a_new_login_preserves_custom_role_while_refreshing_display_data() {
         let tenant = Uuid::from_u128(1);
         let object = Uuid::from_u128(2);
         let now = chrono::Utc::now().fixed_offset();
@@ -233,6 +238,7 @@ mod tests {
         };
         let previous = user.clone();
         user.full_name = Some("New name".into());
+        user.email = Some("person@example.com".into());
         let session = sessions::Model {
             session_id_hash: vec![1; 32],
             user_id: user.id,
@@ -283,6 +289,7 @@ mod tests {
             subject: "subject".into(),
             tenant_id: tenant,
             object_id: object,
+            email: Some("person@example.com".into()),
             full_name: Some("New name".into()),
         };
         store.replace(None, &[1; 32], &identity).await.unwrap();
@@ -294,6 +301,7 @@ mod tests {
             .unwrap();
         let set = update.sql.split(" WHERE ").next().unwrap();
         assert!(set.contains("\"full_name\" ="));
+        assert!(set.contains("\"email\" ="));
         assert!(!set.contains("\"role_id\" ="));
         assert!(
             log[0]
@@ -360,6 +368,7 @@ mod tests {
             subject: "subject".into(),
             tenant_id: tenant,
             object_id: object,
+            email: None,
             full_name: None,
         };
 

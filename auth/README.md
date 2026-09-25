@@ -28,7 +28,7 @@ api::main
 | [`src/lib.rs`](src/lib.rs) | Declara los módulos y la interfaz pública: configuración, estado, router, extractores, identidad, errores, tokens y sesiones. |
 | [`src/config.rs`](src/config.rs) | Lee y valida la configuración OIDC, los destinos de redirección y las duraciones de sesión. Construye el issuer y el origen público esperados. |
 | [`src/state.rs`](src/state.rs) | Construye `AuthState` con el proveedor, el almacén de sesiones, la política de cookies y los flujos de login pendientes. Gestiona su caducidad y limpieza. |
-| [`src/oidc.rs`](src/oidc.rs) | Descubre los metadatos de Entra, genera solicitudes de autorización, canjea códigos, valida ID Tokens. Entrega identidad y nombre de presentación mediante `VerifiedIdentity`. |
+| [`src/oidc.rs`](src/oidc.rs) | Descubre los metadatos de Entra, genera solicitudes de autorización, canjea códigos, valida ID Tokens. Entrega identidad, nombre y correo opcional mediante `VerifiedIdentity`. |
 | [`src/routes.rs`](src/routes.rs) | Define los handlers HTTP de login, callback, sesión actual y los dos tipos de logout; coordina OIDC, cookies y sesiones. También registra sus operaciones en OpenAPI. |
 | [`src/cookie.rs`](src/cookie.rs) | Define nombres, atributos, duración y eliminación de las cookies de sesión y correlación del login. |
 | [`src/token.rs`](src/token.rs) | Genera identificadores opacos de 32 bytes, los codifica en Base64url y calcula el hash SHA-256 que se almacena en PostgreSQL. Valida el formato de una cookie recibida. |
@@ -66,7 +66,7 @@ La URL de `OIDC_REDIRECT_URI` es la dirección **visible para el navegador**. Si
 5. **SPA:** recibe la cookie opaca y consulta `GET /api/auth/me`. El usuario aparece en la lista local después de su primer login; `created_at` registra ese momento.
 6. **Administrador de Tuercavo:** asigna otro rol cuando corresponda mediante `PUT /api/users/{public_id}/role`.
 
-El campo `email` permanece nulo al crear el usuario: el claim de Entra no garantiza una dirección de contacto válida. Las identidades nunca se vinculan por correo. Microsoft documenta la [asignación a usuarios](https://learn.microsoft.com/en-us/entra/identity/enterprise-apps/assign-user-or-group-access-portal) y los [identificadores y metadatos del ID Token](https://learn.microsoft.com/en-us/entra/identity-platform/id-token-claims-reference).
+La API solicita el scope OIDC `email` y guarda el claim del ID Token, si está presente, para mostrarlo en `/api/auth/me`; lo actualiza en cada login. Entra no garantiza que el claim exista ni que sea una dirección de contacto válida, por lo que `email` puede ser `null` y nunca se usa para vincular identidades o autorizar. Microsoft documenta la [asignación a usuarios](https://learn.microsoft.com/en-us/entra/identity/enterprise-apps/assign-user-or-group-access-portal) y los [claims del ID Token](https://learn.microsoft.com/en-us/entra/identity-platform/id-token-claims-reference).
 
 ## Administración de roles y permisos
 

@@ -57,6 +57,7 @@ pub(crate) struct VerifiedIdentity {
     pub subject: String,
     pub tenant_id: Uuid,
     pub object_id: Uuid,
+    pub email: Option<String>,
     pub full_name: Option<String>,
 }
 
@@ -67,6 +68,18 @@ fn display_name(value: Option<&str>) -> Option<String> {
             !value.is_empty()
                 && value.chars().count() <= 150
                 && !value.chars().any(char::is_control)
+        })
+        .map(str::to_owned)
+}
+
+fn display_email(value: Option<&str>) -> Option<String> {
+    value
+        .filter(|value| {
+            !value.is_empty()
+                && value.chars().count() <= 254
+                && !value
+                    .chars()
+                    .any(|character| character.is_whitespace() || character.is_control())
         })
         .map(str::to_owned)
 }
@@ -125,6 +138,7 @@ impl OidcProvider {
                 Nonce::new_random,
             )
             .add_scope(Scope::new("profile".into()))
+            .add_scope(Scope::new("email".into()))
             .set_pkce_challenge(challenge);
         if let Some(prompt) = prompt {
             request = request.add_prompt(prompt);
@@ -192,12 +206,14 @@ impl OidcProvider {
                 .and_then(|name| name.get(None))
                 .map(|value| value.as_str()),
         );
+        let email = display_email(claims.email().map(|value| value.as_str()));
         // Return only verified identity. ID/access/refresh tokens are dropped here.
         Ok(VerifiedIdentity {
             issuer: issuer.into(),
             subject: subject.into(),
             tenant_id: extra.tid,
             object_id: extra.oid,
+            email,
             full_name,
         })
     }
@@ -205,7 +221,7 @@ impl OidcProvider {
 
 #[cfg(test)]
 mod tests {
-    use super::EntraClaims;
+    use super::{EntraClaims, display_email};
 
     #[test]
     fn identity_claims_do_not_require_or_interpret_app_roles() {
@@ -216,5 +232,17 @@ mod tests {
         assert!(serde_json::from_value::<EntraClaims>(value.clone()).is_ok());
         value["roles"] = serde_json::json!(["admin", "unknown"]);
         assert!(serde_json::from_value::<EntraClaims>(value).is_ok());
+    }
+
+    #[test]
+    fn email_claim_is_optional_and_must_fit_the_users_column() {
+        assert_eq!(display_email(None), None);
+        assert_eq!(
+            display_email(Some("person@example.com")),
+            Some("person@example.com".into())
+        );
+        assert_eq!(display_email(Some(" person@example.com")), None);
+        assert_eq!(display_email(Some("person\n@example.com")), None);
+        assert_eq!(display_email(Some(&"x".repeat(255))), None);
     }
 }
