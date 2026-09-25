@@ -18,7 +18,7 @@ Backend REST para el catálogo de una ferretería: productos, categorías y prov
 | [`auth`](auth/) | OIDC, alta local al primer login, cookies, sesiones, extracción del usuario autenticado y comprobación de permisos. |
 | [`bootstrap-admin`](bootstrap-admin/) | Comando operativo para asignar el primer administrador tras su primer login. |
 | [`common`](common/) | Configuración, estado compartido, errores, validación, paginación y telemetría. |
-| [`modules`](modules/) | Rutas, DTO y lógica de productos, categorías, proveedores, usuarios, roles y salud. |
+| [`modules`](modules/) | Rutas, DTO y lógica de productos, categorías, proveedores, departamentos, usuarios, roles y salud. |
 | [`entity`](db/entity/) | Entidades de SeaORM generadas desde PostgreSQL. |
 | [`migration`](db/migration/) | Migraciones versionadas del esquema y datos iniciales de roles y permisos. |
 
@@ -117,6 +117,8 @@ Consulta la [asignación de usuarios de Microsoft](https://learn.microsoft.com/e
 ### 5. Alta de usuarios y primer administrador
 
 Cada persona asignada entra mediante `/api/auth/login`. En su primer login la API crea el usuario con el rol local `consultor`. Hasta ese momento no aparece en `GET /api/users`. Los siguientes logins conservan el rol que le haya asignado Tuercavo; un usuario desactivado permanece bloqueado.
+
+Los usuarios nuevos comienzan sin departamento. `GET /api/departments` lista los departamentos y `GET /api/departments/{public_id}` consulta uno mediante su UUID público; ambos requieren `users.read`. `POST /api/departments` recibe `{"name":"Ventas"}` y requiere `users.update`. Los nombres son únicos sin distinguir mayúsculas. `PUT /api/users/{public_id}/department` recibe `{"department_public_id":"UUID"}` para asignar un departamento existente o `{"department_public_id":null}` para quitarlo; también requiere `users.update`. El campo es obligatorio en el cuerpo. Las respuestas de usuarios y `/api/auth/me` incluyen `department_public_id`, que puede ser `null`. El ID entero del departamento se usa solo como FK interna. Esta asignación no cambia roles, permisos ni sesiones.
 
 Para el primer administrador:
 

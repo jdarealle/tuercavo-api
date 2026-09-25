@@ -9,4 +9,5 @@ pub fn router() -> OpenApiRouter<AppState> {
         .routes(routes!(handler::deactivate))
         .routes(routes!(handler::reactivate))
         .routes(routes!(handler::assign_role))
+        .routes(routes!(handler::assign_department))
 }

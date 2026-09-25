@@ -13,6 +13,7 @@ use uuid::Uuid;
 pub fn api_routes() -> OpenApiRouter<AppState> {
     let api = OpenApiRouter::new()
         .merge(modules::category::router())
+        .merge(modules::departments::router())
         .merge(modules::supplier::router())
         .merge(modules::product::router())
         .merge(modules::users::router())
@@ -71,6 +72,10 @@ mod tests {
         assert!(paths["/api/roles/{code}"].patch.is_some());
         assert!(paths["/api/roles/{code}/permissions"].put.is_some());
         assert!(paths["/api/users/{public_id}/role"].put.is_some());
+        assert!(paths["/api/users/{public_id}/department"].put.is_some());
+        assert!(paths["/api/departments"].get.is_some());
+        assert!(paths["/api/departments"].post.is_some());
+        assert!(paths["/api/departments/{public_id}"].get.is_some());
         assert!(paths["/api/permissions"].get.is_some());
     }
 }

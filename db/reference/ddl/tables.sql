@@ -44,11 +44,13 @@ CREATE TABLE role_permissions (
     CONSTRAINT fk_role_permissions_permission FOREIGN KEY (permission_id) REFERENCES permissions(id) ON DELETE RESTRICT
 );
 
--- Departamentos de la empresa; nombre único sin distinguir mayúsculas.
+-- Departamentos de la empresa; UUID público y nombre único sin distinguir mayúsculas.
 CREATE TABLE departments (
     id INTEGER GENERATED ALWAYS AS IDENTITY,
+    public_id UUID NOT NULL DEFAULT gen_random_uuid(),
     name VARCHAR(150) NOT NULL,
     CONSTRAINT pk_departments PRIMARY KEY (id),
+    CONSTRAINT uq_departments_public_id UNIQUE (public_id),
     CONSTRAINT ck_departments_name CHECK (char_length(name) BETWEEN 1 AND 150 AND name = btrim(name) AND name !~ '[[:cntrl:]]')
 );
 CREATE UNIQUE INDEX uq_departments_name ON departments (lower(name));

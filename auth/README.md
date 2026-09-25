@@ -62,7 +62,7 @@ La URL de `OIDC_REDIRECT_URI` es la dirección **visible para el navegador**. Si
 1. **Responsable de Entra:** registra la aplicación como cliente OIDC confidencial del tenant, con callback Web y credencial de cliente. Configura **Enterprise applications → tuercavo-api → Properties → Assignment required = Yes**.
 2. **Responsable de Entra:** abre **Users and groups → Add user/group**, selecciona a la persona y asigna **Default Access**. La aplicación se configura sin App Roles de negocio.
 3. **Persona usuaria:** navega a `GET /api/auth/login` y se autentica en Entra. El backend canjea el código y valida el ID Token.
-4. **`auth`:** busca la identidad por `(entra_tenant_id, entra_object_id)`. En una transacción crea el usuario como `consultor` si no existe, exige que esté activo, actualiza el nombre de presentación y crea la sesión. Los logins posteriores conservan el rol local. La restricción única de identidad evita duplicados ante logins concurrentes.
+4. **`auth`:** busca la identidad por `(entra_tenant_id, entra_object_id)`. En una transacción crea el usuario como `consultor` y sin departamento si no existe, exige que esté activo, actualiza el nombre de presentación y crea la sesión. Los logins posteriores conservan el rol y el departamento locales. La restricción única de identidad evita duplicados ante logins concurrentes.
 5. **SPA:** recibe la cookie opaca y consulta `GET /api/auth/me`. El usuario aparece en la lista local después de su primer login; `created_at` registra ese momento.
 6. **Administrador de Tuercavo:** asigna otro rol cuando corresponda mediante `PUT /api/users/{public_id}/role`.
 
@@ -75,7 +75,9 @@ La API solicita el scope OIDC `email` y guarda el claim del ID Token, si está p
 | Operación | Permiso |
 | --- | --- |
 | Listar/consultar usuarios | `users.read` |
+| Listar/consultar departamentos | `users.read` |
 | Desactivar/reactivar usuarios | `users.update` |
+| Crear departamentos y asignarlos o quitarlos de usuarios | `users.update` |
 | Asignar un rol | `users.assign_role` |
 | Listar/consultar roles | `roles.read` |
 | Crear roles | `roles.create` |
@@ -86,6 +88,8 @@ La API solicita el scope OIDC `email` y guarda el claim del ID Token, si está p
 `admin` conserva todos los permisos administrativos de esta tabla, aunque sus permisos de catálogo pueden cambiar. `consultor`, el rol predeterminado, solo admite `products.read`, `categories.read` y `suppliers.read`; puede tener un subconjunto, incluso vacío. Ambos roles son del sistema y permanecen activos. Los roles personalizados pueden recibir permisos del catálogo; delegar `users.assign_role` o `roles.assign_permissions` permite conceder privilegios elevados y debe tratarse como capacidad administrativa.
 
 `PUT /api/roles/{code}/permissions` reemplaza la lista completa y rechaza códigos desconocidos o repetidos. Los códigos del catálogo representan operaciones implementadas en Rust; su incorporación se versiona con el backend. Las migraciones futuras deben respetar las asignaciones personalizadas.
+
+`departments` es una clasificación local opcional. `/api/auth/me` expone `department_public_id`; Entra no lo proporciona y el callback no sobrescribe la asignación. Cambiarlo no altera los permisos ni revoca sesiones. Las rutas y ejemplos de administración de departamentos están en el [README principal](../README.md).
 
 `PATCH /api/roles/{code}` modifica `name` o `is_active`; retirar un rol exige que ningún usuario lo tenga asignado, incluidos los inactivos. La API conserva el rol y permite reactivarlo. `PUT /api/users/{public_id}/role` exige un rol activo y revoca las sesiones cuando hay un cambio.
 

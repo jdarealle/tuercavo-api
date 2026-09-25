@@ -8,8 +8,10 @@ impl MigrationTrait for Migration {
     async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
         manager.create_table(Table::create().table(Departments::Table)
             .col(ColumnDef::new(Departments::Id).integer().extra("GENERATED ALWAYS AS IDENTITY"))
+            .col(ColumnDef::new(Departments::PublicId).uuid().not_null().default(Expr::cust("gen_random_uuid()")))
             .col(ColumnDef::new(Departments::Name).string_len(150).not_null())
             .primary_key(Index::create().name("pk_departments").col(Departments::Id))
+            .index(Index::create().name("uq_departments_public_id").unique().col(Departments::PublicId))
             .check(("ck_departments_name", Expr::cust(r#"char_length(name) BETWEEN 1 AND 150 AND name = btrim(name) AND name !~ '[[:cntrl:]]'"#)))
             .to_owned()).await?;
         manager
@@ -37,5 +39,6 @@ impl MigrationTrait for Migration {
 enum Departments {
     Table,
     Id,
+    PublicId,
     Name,
 }

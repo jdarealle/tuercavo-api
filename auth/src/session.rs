@@ -63,6 +63,7 @@ impl SessionStore {
         // The unique tenant/object key makes concurrent first logins idempotent.
         users::Entity::insert(users::ActiveModel {
             role_id: Set(role.id),
+            department_id: Set(None),
             entra_tenant_id: Set(identity.tenant_id),
             entra_object_id: Set(identity.object_id),
             // Display data only; identity and authorization use tenant/object IDs.
@@ -228,6 +229,7 @@ mod tests {
             id: 1,
             public_id: Uuid::from_u128(3),
             role_id: 7,
+            department_id: Some(4),
             entra_tenant_id: tenant,
             entra_object_id: object,
             email: None,
@@ -303,6 +305,7 @@ mod tests {
         assert!(set.contains("\"full_name\" ="));
         assert!(set.contains("\"email\" ="));
         assert!(!set.contains("\"role_id\" ="));
+        assert!(!set.contains("\"department_id\" ="));
         assert!(
             log[0]
                 .statements()
@@ -344,6 +347,7 @@ mod tests {
                         id: 1,
                         public_id: Uuid::from_u128(3),
                         role_id: 1,
+                        department_id: None,
                         entra_tenant_id: tenant,
                         entra_object_id: object,
                         email: None,

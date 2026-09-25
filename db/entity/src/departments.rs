@@ -8,6 +8,8 @@ use sea_orm::entity::prelude::*;
 pub struct Model {
     #[sea_orm(primary_key)]
     pub id: i32,
+    #[sea_orm(unique)]
+    pub public_id: Uuid,
     pub name: String,
     #[sea_orm(has_many)]
     pub users: HasMany<super::users::Entity>,

@@ -98,3 +98,32 @@ pub async fn assign_role(
         .await?,
     ))
 }
+
+#[utoipa::path(put, path = "/users/{public_id}/department", tag = "users", operation_id = "assign_user_department",
+    description = "Asigna un departamento local por UUID público o quita la asignación con department_public_id: null. No cambia el rol ni las sesiones.",
+    params(("public_id" = Uuid, Path)), request_body = AssignDepartment,
+    responses((status = 200, body = UserResponse), (status = 400, body = ErrorResponse),
+        (status = 404, body = ErrorResponse), (status = 409, body = ErrorResponse),
+        (status = 401, body = AuthErrorResponse), (status = 403, body = AuthErrorResponse), (status = 503, body = AuthErrorResponse)),
+    security(("session" = [])))]
+pub async fn assign_department(
+    actor: Require<Update>,
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+    Input(body): Input<AssignDepartment>,
+) -> Result<Json<UserResponse>, AppError> {
+    let department_public_id = body
+        .department_public_id
+        .optional()
+        .ok_or_else(|| AppError::bad("Indica department_public_id o null"))?;
+    Ok(Json(
+        service::assign_department(
+            &state.db,
+            actor.0.user_id,
+            state.auth.tenant_id(),
+            id,
+            department_public_id,
+        )
+        .await?,
+    ))
+}
